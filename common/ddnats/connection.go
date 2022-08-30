@@ -10,6 +10,8 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+var lnc *nats.Conn
+
 func Connect(url string) (*nats.Conn, error) {
 	nc, err := nats.Connect(url)
 
@@ -20,6 +22,7 @@ func Connect(url string) (*nats.Conn, error) {
 	}
 
 	log.Printf("Connected ...")
+	lnc = nc
 	return nc, err
 }
 

@@ -67,7 +67,7 @@ func readUDP(nc *nats.Conn) {
 		prevcounter, _, dlen, subject, err := parseMagic8Packet(packet)
 		// prevcounter, _, dlen, _, err := parseMagic8Packet(packet)
 		if err != nil {
-			// log.Printf("Error while parsing MAGIC8 packet, err: %s", err.Error())
+			log.Printf("Error while parsing MAGIC8 packet, err: %s", err.Error())
 			continue
 		}
 
@@ -78,19 +78,19 @@ func readUDP(nc *nats.Conn) {
 		for index < dlen {
 			n, _, err := udpconn.ReadFromUDP(packet)
 			if err != nil {
-				// log.Printf("Failed to read data packet, err: %s", err.Error())
+				log.Printf("Failed to read data packet, err: %s", err.Error())
 				break
 			}
 
 			if n <= 0 {
-				// log.Printf("Failed to read data packet, n <= 0: %d", n)
+				log.Printf("Failed to read data packet, n <= 0: %d", n)
 				break
 			}
 
 			counter := binary.LittleEndian.Uint32(packet)
 			size := binary.LittleEndian.Uint32(packet[4:])
 			if int(size) > packetsize-8 {
-				// log.Printf("Invalid content size: %d, packet as string: %s", size, string(packet))
+				log.Printf("Invalid content size: %d, packet as string: %s", size, string(packet))
 				break
 			}
 
@@ -109,7 +109,8 @@ func readUDP(nc *nats.Conn) {
 		}
 
 		nc.Publish(subject, mdata)
-		// go log.Printf("published subject: %s, data: %s", subject, string(mdata))
+		// log.Printf("published subject: %s, data: %s", subject, string(mdata))
+		// log.Printf("published subject: %s", subject)
 	}
 
 }

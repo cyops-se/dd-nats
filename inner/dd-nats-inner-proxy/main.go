@@ -58,7 +58,7 @@ func main() {
 }
 
 func connectUDP() (err error) {
-	target := fmt.Sprintf("%s:%d", "192.168.0.100", 4359)
+	target := fmt.Sprintf("%s:%d", "localhost", 4359)
 	udpconn, err = net.Dial("udp", target)
 	return err
 }
@@ -101,6 +101,9 @@ func sendUDP(nc *nats.Conn) {
 
 			remainingsize -= packetsize
 			index += packetsize
+			if counter%50 == 0 {
+				time.Sleep(1 * time.Millisecond)
+			}
 		}
 
 		totmsgs++
@@ -108,6 +111,6 @@ func sendUDP(nc *nats.Conn) {
 		stats := &types.UdpStatistics{TotalMsg: totmsgs, TotalPkts: totpkts}
 		data, _ := json.Marshal(stats)
 		nc.Publish("stats.nats.totmsgs", data)
-		log.Println("")
+		// log.Println("stats:", stats)
 	}
 }
