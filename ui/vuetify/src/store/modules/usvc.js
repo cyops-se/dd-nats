@@ -3,11 +3,7 @@ import { make } from 'vuex-pathify'
 
 // Data
 const state = {
-  version: '0.0.1',
-  drawer: null,
-  drawerImage: false,
-  mini: false,
-  sysinfo: {},
+  services: [],
 }
 
 const mutations = make.mutations(state)
@@ -15,11 +11,12 @@ const mutations = make.mutations(state)
 const actions = {
   ...make.actions(state),
   init: async ({ dispatch }) => {
-    console.log('app/init')
+    console.log('usvc/init')
   },
 }
 
-const getters = {}
+const getters = make.getters(state)
+console.log('usvc module loaded ...')
 
 export default {
   namespaced: true,

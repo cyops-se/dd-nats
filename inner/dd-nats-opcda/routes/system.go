@@ -1,19 +1,15 @@
 package routes
 
 import (
-	"dd-nats/common/logger"
+	"dd-nats/common/ddnats"
 
 	"github.com/nats-io/nats.go"
 )
 
-var lnc *nats.Conn
-
-func RegisterRoutes(nc *nats.Conn) {
-	lnc = nc
-	lnc.Subscribe("system.heartbeat", systemHeartbeats)
-	registerGroupRoutes(lnc)
+func registerSystemRoutes() {
+	ddnats.Subscribe("system.heartbeat", systemHeartbeats)
 }
 
 func systemHeartbeats(msg *nats.Msg) {
-	logger.Trace("heartbeat received", "%s", string(msg.Data))
+	// logger.Trace("heartbeat received", "%s", string(msg.Data))
 }

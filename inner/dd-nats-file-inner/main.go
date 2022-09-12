@@ -37,7 +37,7 @@ type context struct {
 }
 
 func main() {
-	svcName := "dd-nats-file-outer"
+	svcName := "dd-nats-file-inner"
 	nc, err = ddnats.Connect(nats.DefaultURL)
 	if err != nil {
 		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
@@ -48,7 +48,7 @@ func main() {
 		return
 	}
 
-	go ddnats.SendHeartbeat(os.Args[0], nc)
+	go ddnats.SendHeartbeat(svcName)
 	ddsvc.RunService(svcName, runEngine)
 
 	log.Printf("Exiting ...")
@@ -120,16 +120,8 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 	start := &types.FileTransferStart{Name: name, Path: dir, Size: info.Size, TransferStart: time.Now().UTC(), TransferId: id}
 	ddnats.Publish("forward.file.start", start)
 
-	// target := fmt.Sprintf("%s:%d", proxy.EndpointIP, proxy.FilePort)
-	// c, err := net.Dial("udp", target)
-	// if err != nil {
-	// 	logger.Error("Filetransfer", "Failed to dial %s", target)
-	// 	return err
-	// }
-
 	hash := calcHash(filename)
 	hashvalue := hash.Sum(nil)
-	// header := fmt.Sprintf("DD-FILETRANSFER BEGIN v2 %s %s %d %x", name, dir, info.Size, hash.Sum(nil)) // :filename:directory:size:hash:
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -137,7 +129,7 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 		return err
 	}
 
-	// Always send packets of 1200 bytes, regardless
+	// Always send packets of 512KB bytes, regardless
 	content := make([]byte, 512*1024)
 	n := 0
 	block := &types.FileTransferBlock{TransferId: id, BlockNo: 0, FileIndex: 0}

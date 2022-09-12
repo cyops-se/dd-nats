@@ -1,22 +1,18 @@
 package routes
 
 import (
-	"dd-nats/ui/dd-ui/logger"
-	"time"
+	"dd-nats/common/ddnats"
+	"dd-nats/common/logger"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/nats-io/nats.go"
 )
 
 type natsMsg struct {
-	Subject string `json:"subject"`
-	Payload string `json:"payload"` // JSON encoded string
+	Subject string                 `json:"subject"`
+	Payload map[string]interface{} `json:"payload"` // JSON encoded string
 }
 
-var lnc *nats.Conn
-
-func RegisterNatsRoutes(api fiber.Router, nc *nats.Conn) {
-	lnc = nc
+func RegisterNatsRoutes(api fiber.Router) {
 	api.Post("/nats/request", RequestNats)
 }
 
@@ -24,12 +20,14 @@ func RequestNats(c *fiber.Ctx) error {
 	var webrequest natsMsg
 
 	if err := c.BodyParser(&webrequest); err != nil {
-		logger.Log("error", "Failed to map provided data to natsMsg", err.Error())
+		logger.Error("NATS request failed", "Failed to map provided data to natsMsg: %s", err.Error())
 		return c.Status(503).SendString(err.Error())
 	}
 
-	reply, _ := lnc.Request(webrequest.Subject, []byte(webrequest.Payload), time.Second*2)
-	webreply := &natsMsg{Subject: reply.Subject, Payload: string(reply.Data)}
-
-	return c.Status(fiber.StatusOK).JSON(webreply)
+	if reply, err := ddnats.Request(webrequest.Subject, webrequest.Payload); err == nil {
+		return c.Status(fiber.StatusOK).SendString(string(reply.Data)) // ddnats.Respond() already serialized the response to a JSON string
+	} else {
+		logger.Error("NATS request failed", "request: %s, failed: %s", webrequest.Subject, err.Error())
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
 }

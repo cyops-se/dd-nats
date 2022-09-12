@@ -27,7 +27,6 @@ const router = new Router({
       route('ServerTable', null, 'pages/servers'),
       route('TagBrowser', null, 'pages/browse/:serverid'),
       route('GroupTable', null, 'pages/groups'),
-      route('Diode Endpoints', null, 'pages/diodeproxies'),
       route('Tag Table', null, 'pages/tags'),
       route('History', null, 'pages/cache'),
       route('System Settings', null, 'pages/systemsettings'),

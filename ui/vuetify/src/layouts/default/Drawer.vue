@@ -22,7 +22,7 @@
           :key="link.text"
         >
           <v-list-item
-            v-if="!link.subLinks"
+            v-if="!link.subLinks && showitem(link)"
             :to="link.to"
             class="v-list-item"
             :active-class="`${color} lighten-3 ${theme.isDark ? 'black' : 'white'}--text`"
@@ -35,7 +35,7 @@
           </v-list-item>
 
           <v-list-group
-            v-else
+            v-else-if="showitem(link)"
             :key="link.text"
             :prepend-icon="link.icon"
             :value="false"
@@ -61,6 +61,12 @@
             </v-list-item>
           </v-list-group>
         </div>
+        <!-- div
+          v-for="(svc, name) in services"
+          :key="name"
+        >
+          {{ name }} => {{ svc.state }}
+        </div -->
       </v-list>
     </div>
 
@@ -89,6 +95,7 @@
 <script>
   // Utilities
   import { get, sync } from 'vuex-pathify'
+  import WebsocketService from '@/services/websocket.service'
 
   export default {
     name: 'DefaultDrawer',
@@ -134,41 +141,37 @@
           icon: 'mdi-server',
           text: 'OPC DA Servers',
           to: '/pages/servers',
-        },
-        {
-          icon: 'mdi-folder-open',
-          text: 'Diode Endpoints',
-          to: '/pages/diodeproxies',
+          usvc: 'ddnatsopcda',
         },
         {
           icon: 'mdi-folder-multiple',
           text: 'Sampling Groups',
           to: '/pages/groups',
+          usvc: 'ddnatsopcda|ddnatsmodbus',
         },
         {
           icon: 'mdi-tag-multiple',
           text: 'Tags',
           to: '/pages/tags',
+          usvc: 'ddnatsopcda|ddnatsmodbus',
         },
         {
           icon: 'mdi-history',
           text: 'Tag History',
           to: '/pages/cache',
+          usvc: 'ddnatscache',
         },
         {
           icon: 'mdi-transfer',
           text: 'File Transfer',
           to: '/pages/filetransfer',
+          usvc: 'ddnatsfileinner',
         },
         {
           icon: 'mdi-view-list',
           to: '/tables/logs',
           text: 'Logs',
-        },
-        {
-          icon: 'mdi-account-group',
-          to: '/tables/users',
-          text: 'Users',
+          usvc: 'ddnatslogs',
         },
         {
           icon: 'mdi-cog',
@@ -176,6 +179,7 @@
           text: 'Settings',
         },
       ],
+      services: {},
     }),
 
     computed: {
@@ -189,6 +193,44 @@
     },
 
     created () {
+      WebsocketService.topic('system.heartbeat', this, function (topic, jsonstr, t) {
+        if (t.services) {
+          var msg = JSON.parse(jsonstr)
+          var appname = msg.appname.replaceAll('-', '')
+          t.services = { ...t.services, [appname]: { name: appname, state: 'alive', count: 0, lastbeat: new Date() } }
+        }
+      })
+
+      var t = this
+      setInterval(function () {
+        var now = new Date()
+        for (const p in t.services) {
+          if (!t.services[p].lastbeat || t.services[p].state === 'dead') continue
+          var n = now.getSeconds()
+          var lb = t.services[p].lastbeat.getSeconds()
+          var diff = Math.abs(n - lb)
+          if (diff > 5) {
+            t.services[p].state = 'stalling'
+            if (t.services[p].count++ > 3) {
+              console.log('deleting: ' + p)
+              t.services[p].state = 'dead'
+            }
+          }
+        }
+      }, 5000)
+    },
+
+    methods: {
+      showitem (item) {
+        if (!item || !item.usvc) return true
+        var items = item.usvc.split('|')
+        var result = false
+        for (var i in items) {
+          var usvcname = items[i]
+          if (item.usvc && this.services[usvcname] && this.services[usvcname].state !== 'dead') result = true
+        }
+        return result
+      },
     },
   }
 </script>

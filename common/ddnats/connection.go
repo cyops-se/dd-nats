@@ -26,7 +26,7 @@ func Connect(url string) (*nats.Conn, error) {
 	return nc, err
 }
 
-func SendHeartbeat(appname string, nc *nats.Conn) {
+func SendHeartbeat(appname string) {
 	ticker := time.NewTicker(1 * time.Second)
 	hostname, _ := os.Hostname()
 
@@ -34,6 +34,6 @@ func SendHeartbeat(appname string, nc *nats.Conn) {
 		<-ticker.C
 		heartbeat := &types.Heartbeat{Hostname: hostname, AppName: appname, Version: "0.0.1"}
 		payload, _ := json.Marshal(heartbeat)
-		nc.Publish("system.heartbeat", payload)
+		lnc.Publish("system.heartbeat", payload)
 	}
 }

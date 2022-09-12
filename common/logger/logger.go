@@ -16,7 +16,15 @@ func Log(category string, title string, msg string) string {
 	}
 	text := fmt.Sprintf("%s: %s, %s", category, title, msg)
 	log.Printf(text)
+
+	// ddnats.Publish("system.log."+category, entry)
 	return text
+}
+
+func Info(title string, format string, args ...interface{}) error {
+	msg := fmt.Sprintf(format, args...)
+	text := Log("info", title, msg)
+	return fmt.Errorf(text)
 }
 
 func Trace(title string, format string, args ...interface{}) error {

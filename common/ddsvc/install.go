@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package ddsvc
@@ -98,12 +99,12 @@ func ProcessArgs(svcName string) *types.Context {
 	ctx := &types.Context{}
 	flag.StringVar(&ctx.Cmd, "cmd", "debug", "Windows service command (try 'usage' for more info)")
 	flag.StringVar(&ctx.Wdir, "workdir", ".", "Sets the working directory for the process")
-	flag.BoolVar(&ctx.Trace, "trace", false, "Prints traces of OPC data to the console")
+	flag.BoolVar(&ctx.Trace, "trace", false, "Prints traces from the application to the console")
 	flag.BoolVar(&ctx.Version, "v", false, "Prints the commit hash and exits")
 	flag.Parse()
 
 	if ctx.Cmd == "install" {
-		if err := installService(svcName, "dd-opcda from cyops-se"); err != nil {
+		if err := installService(svcName, "from cyops-se"); err != nil {
 			log.Fatalf("failed to %s %s: %v", ctx.Cmd, svcName, err)
 		}
 		return nil

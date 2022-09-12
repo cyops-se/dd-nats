@@ -88,7 +88,7 @@
     },
 
     mounted () {
-      this.loadSettings()
+      // this.loadSettings()
       this.refresh()
       this.rootSelected()
     },
@@ -105,9 +105,11 @@
       },
 
       refresh () {
-        ApiService.get('opc/tag/names')
+        var request = { subject: 'usvc.opc.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+        ApiService.post('nats/request', request)
+          // ApiService.get('opc/tag/names')
           .then(response => {
-            this.tags = response.data
+            this.tags = response.data.items
             console.log('tags: ', JSON.stringify(this.tags))
           }).catch(response => {
             console.log('ERROR response: ' + response.message)
@@ -118,18 +120,20 @@
       rootSelected () {
         console.log('root selected')
         this.items = []
-        ApiService.get('opc/server/' + this.$route.params.serverid + '/root')
+        var request = { subject: 'usvc.opc.servers.root', payload: { value: parseInt(this.$route.params.serverid) } }
+        ApiService.post('nats/request', request)
           .then(response => {
-            if (response.data.branches) {
-              for (var i = 0; i < response.data.branches.length; i++) {
-                var item = { name: response.data.branches[i], children: [], path: response.data.branches[i] }
+            var payload = response.data
+            if (payload.branches) {
+              for (var i = 0; i < payload.branches.length; i++) {
+                var item = { name: payload.branches[i], children: [], path: payload.branches[i] }
                 this.items.push(item)
               }
             }
 
-            if (response.data.leaves) {
-              for (i = 0; i < response.data.leaves.length; i++) {
-                this.items.push({ name: response.data.leaves[i], file: 'tag' })
+            if (payload.leaves) {
+              for (i = 0; i < payload.leaves.length; i++) {
+                this.items.push({ name: payload.leaves[i], file: 'tag' })
               }
             }
             this.tree = this.tags
@@ -153,40 +157,30 @@
       },
 
       activated (item) {
-        console.log('item activated' + JSON.stringify(item))
-        if (item.file === 'tag') {
-          // delete
-          ApiService.delete('data/opc_tags/field/name/' + encodeURIComponent(item.path))
-            .then(({ data }) => {
-              console.log('deleted tag response: ' + JSON.stringify(data))
-            }).then(data => {
-              this.refresh()
-            }).catch(response => {
-              console.log('deleted tag ERROR response: ' + response.message)
-            })
-        } else {
-          // add
-          var tag = item.path.replaceAll('/', this.delimiter)
-          ApiService.post('opc/tag/names', [tag])
-            .then(({ data }) => {
-              console.log('new tags response: ' + JSON.stringify(data))
-            }).then(data => {
-              this.refresh()
-            }).catch(response => {
-              console.log('new tags ERROR response: ' + response.message)
-            })
-        }
-
-        item.file = item.file === 'tag' ? 'tagoutline' : 'tag'
+        console.log('item toggled' + JSON.stringify(item))
+        var op = item.file === 'tag' ? 'delete' : 'add'
+        var tag = item.path.replaceAll('/', this.delimiter)
+        var payload = { serverid: parseInt(this.$route.params.serverid), tag: tag }
+        var request = { subject: 'usvc.opc.tags.' + op, payload }
+        ApiService.post('nats/request', request)
+          .then(response => {
+            console.log('new tags response: ' + JSON.stringify(response))
+            this.refresh()
+            if (response.data.success) {
+              item.file = item.file === 'tag' ? 'tagoutline' : 'tag'
+            }
+          }).catch(response => {
+            console.log('new tags ERROR response: ' + response.message)
+          })
       },
 
       async loadBranch (item) {
         console.log('branch item: ' + JSON.stringify(item))
         var branch = item.path.replaceAll('/', '.')
         console.log('loading', branch)
-        let uri = 'opc/server/' + this.$route.params.serverid + '/list/' + branch
-        if (branch === 'root') uri = 'opc/server/' + this.$route.params.serverid + '/root'
-        return ApiService.get(uri)
+        var payload = { serverid: parseInt(this.$route.params.serverid), branch: branch }
+        var request = { subject: 'usvc.opc.servers.getbranch', payload }
+        return ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.branches) {
               for (var i = 0; i < response.data.branches.length; i++) {
@@ -203,7 +197,8 @@
                 var icon = 'tagoutline'
 
                 for (var tn = 0; tn < this.tags.length; tn++) {
-                  if (this.tags[tn] === path) {
+                  var name = this.tags[tn].name.replaceAll('.', '/')
+                  if (name === path) {
                     icon = 'tag'
                     break
                   }

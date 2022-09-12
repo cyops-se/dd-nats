@@ -2,9 +2,8 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
-	"dd-nats/common/types"
+	"dd-nats/common/logger"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -47,7 +46,7 @@ func main() {
 	nc.Subscribe("system.>", callbackHandler)
 
 	// Set up heartbeat
-	go ddnats.SendHeartbeat(os.Args[0], nc)
+	go ddnats.SendHeartbeat(os.Args[0])
 
 	// Sleep until interrupted
 	c := make(chan os.Signal)
@@ -64,6 +63,8 @@ func connectUDP() (err error) {
 }
 
 func callbackHandler(msg *nats.Msg) {
+	// logger.Trace("Inner proxy", "Subject: %s, Message: %s", msg.Subject, string(msg.Data))
+	logger.Trace("Inner proxy", "Subject: %s", msg.Subject)
 	forwarder <- msg
 }
 
@@ -108,9 +109,9 @@ func sendUDP(nc *nats.Conn) {
 
 		totmsgs++
 
-		stats := &types.UdpStatistics{TotalMsg: totmsgs, TotalPkts: totpkts}
-		data, _ := json.Marshal(stats)
-		nc.Publish("stats.nats.totmsgs", data)
+		// stats := &types.UdpStatistics{TotalMsg: totmsgs, TotalPkts: totpkts}
+		// data, _ := json.Marshal(stats)
+		// nc.Publish("stats.nats.totmsgs", data)
 		// log.Println("stats:", stats)
 	}
 }

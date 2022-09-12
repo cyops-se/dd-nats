@@ -3,10 +3,11 @@ package main
 import (
 	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
+	"dd-nats/common/logger"
+	"dd-nats/inner/dd-nats-opcda/data"
 	"dd-nats/inner/dd-nats-opcda/routes"
 	"log"
 	"net"
-	"os"
 
 	"github.com/nats-io/nats.go"
 )
@@ -18,23 +19,28 @@ var packet []byte
 
 func main() {
 	svcName := "dd-nats-opcda"
-	nc, err := ddnats.Connect(nats.DefaultURL)
+	_, err := ddnats.Connect(nats.DefaultURL)
 	if err != nil {
 		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
 		return
 	}
 
-	if ctx := ddsvc.ProcessArgs(svcName); ctx == nil {
+	ctx := ddsvc.ProcessArgs(svcName)
+	if ctx == nil {
 		return
 	}
 
-	routes.RegisterRoutes(nc)
-	go ddnats.SendHeartbeat(os.Args[0], nc)
+	if !data.InitLocalDatabase(ctx) {
+		panic("Critical internal error")
+	}
+
+	routes.RegisterRoutes()
+	go ddnats.SendHeartbeat(svcName)
 	ddsvc.RunService(svcName, runEngine)
 
 	log.Printf("Exiting ...")
 }
 
 func runEngine() {
-	log.Println("Engine running ...")
+	logger.Info("Microservices", "OPC DA microservice running")
 }

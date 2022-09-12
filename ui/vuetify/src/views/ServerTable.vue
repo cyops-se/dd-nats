@@ -3,6 +3,8 @@
     :headers="headers"
     :items="items"
     class="elevation-1"
+    style="cursor: pointer"
+    @click:row="rowclick"
   >
     <template v-slot:top>
       <v-toolbar
@@ -20,7 +22,7 @@
     <template v-slot:item.actions="{ item }">
       <router-link
         style="text-decoration: none; color: inherit;"
-        :to="{name: 'TagBrowser', params: {serverid: item.ID}}"
+        :to="{name: 'TagBrowser', params: {serverid: item.id}}"
       >
         <v-icon
           class="mr-2"
@@ -67,7 +69,8 @@
 
     created () {
       this.loading = true
-      ApiService.get('opc/server')
+      var body = { subject: 'usvc.opc.servers.getall' }
+      ApiService.post('nats/request', body)
         .then(response => {
           this.items = response.data
           this.loading = false
@@ -78,6 +81,11 @@
 
     methods: {
       initialize () {},
+      rowclick (item) {
+        console.log('row clicked: ' + JSON.stringify(item))
+        this.$router.push({ name: 'TagBrowser', params: { serverid: item.id } })
+      },
+
       editItem (item) {
         this.editedIndex = this.items.indexOf(item)
         this.editedItem = Object.assign({}, item)
@@ -96,7 +104,7 @@
         var kalle = this.editedItem
         if (this.editedIndex > -1) {
           Object.assign(this.items[this.editedIndex], this.editedItem)
-          ApiService.put('data/users', this.editedItem)
+          ApiService.put('nats/request/usvc.opc.servers.getall', this.editedItem)
             .then(response => {
               this.$notification.success('User ' + response.data.fullname + ' successfully updated!')
             }).catch(response => {

@@ -58,7 +58,7 @@
                       />
                     </v-col>
                   </v-row>
-                  <v-row>
+                  <!-- <v-row>
                     <v-col
                       cols="12"
                     >
@@ -68,7 +68,7 @@
                         outlined
                       />
                     </v-col>
-                  </v-row>
+                  </v-row> -->
                 </v-container>
               </v-card-text>
 
@@ -161,7 +161,7 @@
           text: 'ID',
           align: 'start',
           filterable: false,
-          value: 'ID',
+          value: 'id',
           width: 75,
         },
         { text: 'Name', value: 'name', width: '60%' },
@@ -187,9 +187,8 @@
     }),
 
     created () {
-      this.update()
+      this.refresh()
       WebsocketService.topic('data.message', this, function (topic, message, t) {
-        // console.log(JSON.stringify(message))
         var msg = JSON.parse(message)
         for (var i = 0; i < msg.points.length; i++) {
           var p = msg.points[i]
@@ -202,25 +201,32 @@
     methods: {
       initialize () {},
 
-      update () {
+      refresh () {
         this.loading = true
-        ApiService.get('data/opc_tags')
+        var request = { subject: 'usvc.opc.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+        ApiService.post('nats/request', request)
           .then(response => {
-            this.items = response.data
-            this.loading = false
+            this.items = response.data.items
+            console.log('tags: ', JSON.stringify(this.items))
           }).catch(response => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to get tags: ' + response.message)
           })
-        ApiService.get('data/opc_groups')
+        request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+        ApiService.post('nats/request', request)
+          // ApiService.get('opc/tag/names')
           .then(response => {
-            this.groups = response.data
+            this.groups = response.data.items
             this.availableGroups = this.groups
+            console.log('groups: ', JSON.stringify(this.groups))
           }).catch(response => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to get tags: ' + response.message)
           })
       },
 
       editItem (item) {
+        console.log('item: ' + JSON.stringify(item))
         this.editedIndex = this.items.indexOf(item)
         this.editedItem = Object.assign({}, item)
         this.editedItem.groupname = item.group.name
@@ -248,6 +254,21 @@
       },
 
       save () {
+        console.log('item saved' + JSON.stringify(this.editedItem))
+        var op = this.editedIndex > -1 ? 'update' : 'add'
+        var payload = this.editedItem
+        var request = { subject: 'usvc.opc.tags.' + op, payload }
+        ApiService.post('nats/request', request)
+          .then(response => {
+            console.log('tags response: ' + JSON.stringify(response))
+            this.refresh()
+          }).catch(response => {
+            console.log('new tags ERROR response: ' + response.message)
+          })
+        this.close()
+      },
+
+      saveOld () {
         if (this.editedIndex > -1) {
           Object.assign(this.items[this.editedIndex], this.editedItem)
           ApiService.put('data/opc_tags', this.editedItem)
@@ -360,7 +381,7 @@
 
         if (this.items.length === 0) {
           this.$notification.error('No new or changed items identified')
-          this.update()
+          this.refresh()
         } else {
           this.saveDisabled = false
         }
@@ -371,7 +392,7 @@
         ApiService.post('opc/tag/changes', this.items)
           .then(response => {
             t.$notification.success('Changes saved')
-            t.update()
+            t.refresh()
           }).catch(function (response) {
             t.$notification.error('Failed to save changes: ' + response)
           })

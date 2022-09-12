@@ -16,7 +16,7 @@
           </v-col>
         </v-row>
       </v-col>
-      <error-logs-tables-view />
+      <!-- error-logs-tables-view / -->
     </v-row>
   </v-container>
 </template>

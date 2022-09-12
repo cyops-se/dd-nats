@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"dd-nats/ui/dd-ui/db"
-	"dd-nats/ui/dd-ui/logger"
-	"dd-nats/ui/dd-ui/types"
+	"dd-nats/common/db"
+	"dd-nats/common/logger"
+	"dd-nats/common/types"
 	"fmt"
 	"net/http"
 

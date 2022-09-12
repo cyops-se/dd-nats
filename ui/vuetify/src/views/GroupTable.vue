@@ -64,7 +64,7 @@
                       hide-details
                     />
                   </v-col>
-                  <v-col cols="12">
+                  <!-- <v-col cols="12">
                     <v-combobox
                       v-model="editedItem.diodeproxy"
                       :items="availableDiodeProxies"
@@ -73,7 +73,7 @@
                       outlined
                       hide-details
                     />
-                  </v-col>
+                  </v-col> -->
                   <v-col cols="12">
                     <v-checkbox
                       v-model="editedItem.runatstart"
@@ -92,13 +92,13 @@
                       :value="editedItem ? editedItem.defaultgroup : true"
                     />
                   </v-col>
-                  <v-col cols="12">
+                  <!-- <v-col cols="12">
                     <v-textarea
                       v-model="editedItem.description"
                       label="Description"
                       outlined
                     />
-                  </v-col>
+                  </v-col> -->
                 </v-row>
               </v-container>
             </v-card-text>
@@ -159,13 +159,11 @@
           text: 'ID',
           align: 'start',
           filterable: false,
-          value: 'ID',
+          value: 'id',
           width: 75,
         },
-        { text: 'Name', value: 'name', width: '20%' },
-        { text: 'Description', value: 'description', width: '30%' },
-        { text: 'OPC DA Server', value: 'progid', width: '10%' },
-        { text: 'Diode proxy', value: 'diodeproxy.name', width: '10%' },
+        { text: 'Name', value: 'name', width: '40%' },
+        { text: 'OPC DA Server', value: 'progid', width: '40%' },
         { text: 'Sampling Interval (seconds)', value: 'interval', width: '10%' },
         { text: 'Default', value: 'defaultgroup', width: '5%' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
@@ -181,38 +179,39 @@
     }),
 
     created () {
-      this.loading = true
-      this.editedItem = Object.assign({}, this.defaultItem)
-      this.editedIndex = -1
-      ApiService.get('data/opc_groups')
-        .then(response => {
-          this.items = response.data
-          this.loading = false
-        }).catch(response => {
-          console.log('ERROR response: ' + JSON.stringify(response))
-        })
-
-      ApiService.get('opc/server')
-        .then(response => {
-          for (var i = 0; i < response.data.length; i++) {
-            this.availableProgids.push(response.data[i].progid)
-          }
-          console.log('available progids: ' + this.availableProgids)
-        }).catch(response => {
-          console.log('ERROR response: ' + JSON.stringify(response))
-        })
-
-      ApiService.get('data/diode_proxies')
-        .then(response => {
-          this.availableDiodeProxies = response.data
-          console.log('available diode proxies: ' + JSON.stringify(this.availableDiodeProxies))
-        }).catch(response => {
-          console.log('ERROR response: ' + JSON.stringify(response))
-        })
+      this.refresh()
     },
 
     methods: {
       initialize () {},
+
+      refresh () {
+        this.loading = true
+        this.editedItem = Object.assign({}, this.defaultItem)
+        this.editedIndex = -1
+        var request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+        ApiService.post('nats/request', request)
+          // ApiService.get('opc/tag/names')
+          .then(response => {
+            this.items = response.data.items
+            console.log('groups: ', JSON.stringify(this.items))
+          }).catch(response => {
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to get tags: ' + response.message)
+          })
+
+        request = { subject: 'usvc.opc.servers.getall' }
+        ApiService.post('nats/request', request)
+          .then(response => {
+            for (var i = 0; i < response.data.length; i++) {
+              this.availableProgids.push(response.data[i].progid)
+            }
+            console.log('servers: ', JSON.stringify(this.availableProgids))
+            this.loading = false
+          }).catch(response => {
+            console.log('ERROR response: ' + JSON.stringify(response))
+          })
+      },
 
       editItem (item) {
         this.editedIndex = this.items.indexOf(item)
@@ -221,7 +220,10 @@
       },
 
       deleteItem (item) {
-        ApiService.delete('data/opc_groups/' + item.ID)
+        var payload = { items: [item] }
+        var request = { subject: 'usvc.opc.groups.delete', payload }
+        console.log('group op payload: ' + JSON.stringify(payload))
+        ApiService.post('nats/request', request)
           .then(response => {
             for (var i = 0; i < this.items.length; i++) {
               if (this.items[i].ID === item.ID) this.items.splice(i, 1)
@@ -241,30 +243,18 @@
       },
 
       save () {
-        if (this.editedIndex > -1) {
-          // Object.assign(this.items[this.editedIndex], this.editedItem)
-          ApiService.put('opc/group', this.editedItem)
-            .then(response => {
-              this.$notification.success('Group updated!')
-              this.items = response.data
-            }).catch(function (response) {
-              console.log('Failed to update group! ' + response)
-              this.$notification.error('Failed to update group!' + response)
-            })
-        } else {
-          ApiService.post('opc/group', this.editedItem)
-            .then(response => {
-              this.$notification.success('Group created!')
-              // this.items.push(response.data)
-              this.items = response.data
-            }).catch(function (response) {
-              console.log('Failed to create group! ' + response.message)
-              this.$notification.error('Failed to create group!' + response)
-            })
-        }
-        this.editedItem = Object.assign({}, this.defaultItem)
-        this.editedIndex = -1
-        this.close()
+        var op = this.editedIndex > -1 ? 'update' : 'add'
+        var payload = { items: [this.editedItem] }
+        var request = { subject: 'usvc.opc.groups.' + op, payload }
+        console.log('group op payload: ' + JSON.stringify(payload))
+        ApiService.post('nats/request', request)
+          .then(response => {
+            console.log(op + ': group response: ' + JSON.stringify(response))
+            this.refresh()
+            this.close()
+          }).catch(response => {
+            console.log('new tags ERROR response: ' + response.message)
+          })
       },
     },
   }

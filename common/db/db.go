@@ -11,19 +11,24 @@ import (
 
 var DB *gorm.DB
 
-func ConnectDatabase(ctx types.Context, name string) {
+func ConnectDatabase(ctx types.Context, name string) error {
 	filename := path.Join(ctx.Wdir, name)
 	database, err := gorm.Open(sqlite.Open(filename), &gorm.Config{})
 	if err != nil {
 		log.Printf("Failed to connect to database: %s", err.Error())
-		return
+		return err
 	}
 
 	log.Printf("Application database connected")
 	DB = database
+	return nil
 }
 
 func ConfigureTypes(database *gorm.DB, datatypes ...interface{}) {
+	if database == nil {
+		return
+	}
+
 	for _, datatype := range datatypes {
 		stmt := &gorm.Statement{DB: database}
 		stmt.Parse(datatype)

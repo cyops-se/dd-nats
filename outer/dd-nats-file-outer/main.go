@@ -46,7 +46,7 @@ type transferInfo struct {
 var register map[string]*transferInfo
 
 func main() {
-	svcName := "dd-nats-file-inner"
+	svcName := "dd-nats-file-outer"
 	nc, err = ddnats.Connect(nats.DefaultURL)
 	if err != nil {
 		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
