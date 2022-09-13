@@ -101,6 +101,7 @@ func ProcessArgs(svcName string) *types.Context {
 	flag.StringVar(&ctx.Wdir, "workdir", ".", "Sets the working directory for the process")
 	flag.BoolVar(&ctx.Trace, "trace", false, "Prints traces from the application to the console")
 	flag.BoolVar(&ctx.Version, "v", false, "Prints the commit hash and exits")
+	flag.StringVar(&ctx.Name, "name", svcName, "Sets the name of the service")
 	flag.Parse()
 
 	if ctx.Cmd == "install" {

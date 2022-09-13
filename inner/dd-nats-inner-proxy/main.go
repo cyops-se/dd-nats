@@ -2,7 +2,7 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
-	"dd-nats/common/logger"
+	"dd-nats/common/types"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -21,6 +21,7 @@ var udpconn net.Conn
 var packet []byte
 
 func main() {
+	svcName := "dd-nats-inner-proxy"
 	if err := connectUDP(); err != nil {
 		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
@@ -34,10 +35,8 @@ func main() {
 		return
 	}
 
-	packet = make([]byte, 1200)
-
 	// Set up UDP sender
-	go sendUDP(nc)
+	go sendUDP()
 
 	// Set up subscription wildcard for messages that should be forwarded to the outer proxy
 	nc.Subscribe("forward.>", callbackHandler)
@@ -46,7 +45,7 @@ func main() {
 	nc.Subscribe("system.>", callbackHandler)
 
 	// Set up heartbeat
-	go ddnats.SendHeartbeat(os.Args[0])
+	go ddnats.SendHeartbeat(svcName)
 
 	// Sleep until interrupted
 	c := make(chan os.Signal)
@@ -63,15 +62,16 @@ func connectUDP() (err error) {
 }
 
 func callbackHandler(msg *nats.Msg) {
-	// logger.Trace("Inner proxy", "Subject: %s, Message: %s", msg.Subject, string(msg.Data))
-	logger.Trace("Inner proxy", "Subject: %s", msg.Subject)
+	// Use of channel to serialize NATS message callbacks
 	forwarder <- msg
 }
 
-func sendUDP(nc *nats.Conn) {
+func sendUDP() {
 	totmsgs := uint64(0)
 	totpkts := uint64(0)
 	counter := uint32(0)
+	packet = make([]byte, 1200)
+
 	for {
 		msg := <-forwarder
 		sdata := []byte("inner." + msg.Subject)
@@ -102,16 +102,14 @@ func sendUDP(nc *nats.Conn) {
 
 			remainingsize -= packetsize
 			index += packetsize
-			if counter%50 == 0 {
+			if counter%25 == 0 {
 				time.Sleep(1 * time.Millisecond)
 			}
 		}
 
 		totmsgs++
 
-		// stats := &types.UdpStatistics{TotalMsg: totmsgs, TotalPkts: totpkts}
-		// data, _ := json.Marshal(stats)
-		// nc.Publish("stats.nats.totmsgs", data)
-		// log.Println("stats:", stats)
+		stats := &types.UdpStatistics{TotalMsg: totmsgs, TotalPkts: totpkts}
+		ddnats.Publish("stats.nats.totmsgs", stats)
 	}
 }

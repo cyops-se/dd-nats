@@ -125,14 +125,18 @@
           </v-btn>
         </v-toolbar>
       </template>
-      <template v-slot:item.actions="{ item }">
+      <template
+        v-slot:item.actions="{ item }"
+      >
         <v-icon
+          v-if="!item.new"
           class="mr-2"
           @click="editItem(item)"
         >
           mdi-pencil
         </v-icon>
         <v-icon
+          v-if="!item.new"
           @click="deleteItem(item)"
         >
           mdi-delete
@@ -167,8 +171,7 @@
         { text: 'Name', value: 'name', width: '60%' },
         { text: 'Group', value: 'group.name', width: '20%' },
         { text: 'Value', value: 'value', width: '10%' },
-        { text: 'Changed', value: 'changed', width: '10%' },
-        { text: 'New', value: 'new', width: '10%' },
+        { text: '', value: 'diff', width: '10%' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
       ],
       items: [],
@@ -188,8 +191,7 @@
 
     created () {
       this.refresh()
-      WebsocketService.topic('data.message', this, function (topic, message, t) {
-        var msg = JSON.parse(message)
+      WebsocketService.topic('system.event.process.message', this, function (topic, msg, t) {
         for (var i = 0; i < msg.points.length; i++) {
           var p = msg.points[i]
           var item = t.items.find(i => i.name === p.n)
@@ -207,26 +209,25 @@
         ApiService.post('nats/request', request)
           .then(response => {
             this.items = response.data.items
-            console.log('tags: ', JSON.stringify(this.items))
           }).catch(response => {
-            console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to get tags: ' + response.message)
+            this.$notification.error('Failed to get tags: ' + response.data.statusmsg)
           })
         request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
         ApiService.post('nats/request', request)
           // ApiService.get('opc/tag/names')
           .then(response => {
-            this.groups = response.data.items
-            this.availableGroups = this.groups
-            console.log('groups: ', JSON.stringify(this.groups))
+            if (response.data.success) {
+              this.groups = response.data.items
+              this.availableGroups = this.groups
+            } else {
+              this.$notification.error('Failed to get groups: ' + response.data.statusmsg)
+            }
           }).catch(response => {
-            console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to get tags: ' + response.message)
+            this.$notification.error('Failed to get groups: ' + response.message)
           })
       },
 
       editItem (item) {
-        console.log('item: ' + JSON.stringify(item))
         this.editedIndex = this.items.indexOf(item)
         this.editedItem = Object.assign({}, item)
         this.editedItem.groupname = item.group.name
@@ -234,14 +235,18 @@
       },
 
       deleteItem (item) {
-        ApiService.delete('data/opc_tags/' + item.ID)
+        var payload = { items: [item] }
+        var request = { subject: 'usvc.opc.tags.delete', payload }
+        ApiService.post('nats/request', request)
           .then(response => {
-            for (var i = 0; i < this.items.length; i++) {
-              if (this.items[i].ID === item.ID) this.items.splice(i, 1)
+            this.refresh()
+            if (response.data.success) {
+              this.$notification.success('Tag deleted')
+            } else {
+              this.$notification.error('Failed to delete tag: ' + response.data.statusmsg)
             }
-            this.$notification.success('Tag deleted')
           }).catch(response => {
-            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to delete tag:' + response.message)
           })
       },
 
@@ -254,36 +259,20 @@
       },
 
       save () {
-        console.log('item saved' + JSON.stringify(this.editedItem))
         var op = this.editedIndex > -1 ? 'update' : 'add'
-        var payload = this.editedItem
+        var payload = { items: [this.editedItem] }
         var request = { subject: 'usvc.opc.tags.' + op, payload }
         ApiService.post('nats/request', request)
           .then(response => {
-            console.log('tags response: ' + JSON.stringify(response))
-            this.refresh()
+            if (response.data.success) {
+              this.refresh()
+              this.$notification.success('Tag saved')
+            } else {
+              this.$notification.error('Failed to save tag: ' + response.data.statusmsg)
+            }
           }).catch(response => {
-            console.log('new tags ERROR response: ' + response.message)
+            this.$notification.error('Failed to save tag: ' + response.message)
           })
-        this.close()
-      },
-
-      saveOld () {
-        if (this.editedIndex > -1) {
-          Object.assign(this.items[this.editedIndex], this.editedItem)
-          ApiService.put('data/opc_tags', this.editedItem)
-            .then(response => {
-            }).catch(response => {
-              this.$notification.error('Failed to update tag!' + response)
-            })
-        } else {
-          this.items.push(this.editedItem)
-          ApiService.post('data/opc_tags', this.editedItem)
-            .then(response => {
-            }).catch(response => {
-              this.failureMessage('Failed to add tag!' + response)
-            })
-        }
         this.close()
       },
 
@@ -307,7 +296,6 @@
         var reader = new FileReader()
         var t = this
         reader.onload = function (event) {
-          // console.log('file content loaded: ' + event.target.result)
           var j = t.csvJSON(event.target.result)
           t.content = j
           t.processResponse(j)
@@ -346,7 +334,7 @@
           if (tagname === '') continue
 
           for (var g = 0; g < this.groups.length; g++) {
-            if (this.groups[g].ID === groupid) {
+            if (this.groups[g].id === groupid) {
               group = this.groups[g]
               break
             }
@@ -364,6 +352,7 @@
               item.groupid = groupid
               item.group = group
               item.changed = true
+              item.diff = 'changed'
             } else {
               item.changed = false
             }
@@ -371,7 +360,7 @@
           }
 
           if (!found) {
-            var newitem = { name: tagname, groupid: groupid, group: group, new: true }
+            var newitem = { name: tagname, groupid: groupid, group: group, new: true, diff: 'new' }
             this.items.push(newitem)
           }
         }
@@ -388,6 +377,23 @@
       },
 
       saveChanges () {
+        var payload = { items: this.items }
+        var request = { subject: 'usvc.opc.tags.update', payload }
+        ApiService.post('nats/request', request)
+          .then(response => {
+            if (response.data.success) {
+              this.refresh()
+              this.$notification.success('Changes saved')
+            } else {
+              this.$notification.error('Failed to save changes: ' + response.data.statusmsg)
+            }
+          }).catch(response => {
+            this.$notification.error('Failed to save changes: ' + response.message)
+          })
+        this.close()
+      },
+
+      saveChangesOld () {
         var t = this
         ApiService.post('opc/tag/changes', this.items)
           .then(response => {

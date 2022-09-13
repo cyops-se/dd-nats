@@ -15,6 +15,17 @@
             <div>{{ stats }}</div>
           </v-col>
         </v-row>
+        <v-row>
+          <v-col
+            v-for="(group, i) in groups"
+            :key="`group-${i}`"
+            cols="12"
+            md="6"
+            lg="4"
+          >
+            <material-group-card :group="group" />
+          </v-col>
+        </v-row>
       </v-col>
       <!-- error-logs-tables-view / -->
     </v-row>
@@ -24,6 +35,7 @@
 <script>
   // Utilities
   import ErrorLogsTablesView from './ErrorLogs'
+  import ApiService from '@/services/api.service'
   import WebsocketService from '@/services/websocket.service'
 
   export default {
@@ -35,14 +47,25 @@
 
     data: () => ({
       stats: '',
+      groups: [],
     }),
 
     computed: {
     },
 
     created () {
+      var request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+      ApiService.post('nats/request', request)
+        .then(response => {
+          this.groups = response.data.items
+        }).catch(response => {
+          console.log('ERROR response: ' + response.message)
+          this.$notification.error('Failed to get groups: ' + response.message)
+        })
+    },
+
+    createdX () {
       WebsocketService.topic('stats.nats.totmsgs', this, function (topic, message, t) {
-        // console.log(JSON.stringify(message))
         var msg = JSON.parse(message)
         t.stats = message
       })

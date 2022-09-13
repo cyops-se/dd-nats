@@ -3,8 +3,7 @@ package main
 import (
 	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
-	"dd-nats/inner/dd-nats-opcda/data"
+	"dd-nats/inner/dd-nats-opcda/app"
 	"dd-nats/inner/dd-nats-opcda/routes"
 	"log"
 	"net"
@@ -30,17 +29,11 @@ func main() {
 		return
 	}
 
-	if !data.InitLocalDatabase(ctx) {
-		panic("Critical internal error")
+	if app.Init(ctx) {
+		routes.RegisterRoutes()
+		go ddnats.SendHeartbeat(ctx.Name)
+		ddsvc.RunService(ctx.Name, app.RunApp)
 	}
 
-	routes.RegisterRoutes()
-	go ddnats.SendHeartbeat(svcName)
-	ddsvc.RunService(svcName, runEngine)
-
 	log.Printf("Exiting ...")
-}
-
-func runEngine() {
-	logger.Info("Microservices", "OPC DA microservice running")
 }

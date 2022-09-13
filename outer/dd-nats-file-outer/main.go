@@ -7,16 +7,13 @@ import (
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"encoding/json"
-	"fmt"
 	"hash"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -53,14 +50,15 @@ func main() {
 		return
 	}
 
-	if c := ddsvc.ProcessArgs(svcName); c == nil {
+	c := ddsvc.ProcessArgs(svcName)
+	if c == nil {
 		return
 	}
 
 	register = make(map[string]*transferInfo)
 
-	go ddnats.SendHeartbeat(os.Args[0], nc)
-	ddsvc.RunService(svcName, runEngine)
+	go ddnats.SendHeartbeat(c.Name)
+	ddsvc.RunService(c.Name, runEngine)
 
 	log.Printf("Exiting ...")
 }
@@ -135,98 +133,6 @@ func fileStartHandler(msg *nats.Msg) {
 	filepath := path.Join(ctx.basedir, ctx.processingdir, start.Path)
 	os.MkdirAll(filepath, 0755)
 	entry.file, err = os.Create(path.Join(filepath, entry.start.Name))
-}
-
-func sendFile(ctx *context, info *types.FileInfo) error {
-	dir := info.Path
-	name := info.Name
-	filename := path.Join(ctx.basedir, ctx.processingdir, dir, name)
-
-	fi, err := os.Lstat(filename)
-	if err != nil {
-		logger.Error("Filetransfer", "Cannot find file: %s, error: %s", filename, err.Error())
-		return fmt.Errorf("file not found")
-	}
-
-	if fi.IsDir() {
-		logger.Error("Filetransfer", "'filename' points to a directory, not a file: %s", filename)
-		return fmt.Errorf("directory, not file")
-	}
-
-	if fi.Size() == 0 {
-		logger.Error("Filetransfer", "'filename' is empty:", filename)
-		return fmt.Errorf("empty file")
-	}
-
-	id := fmt.Sprintf("%d", rand.Int())
-	start := &types.FileTransferStart{Name: name, Path: dir, Size: info.Size, TransferStart: time.Now().UTC(), TransferId: id}
-	ddnats.Publish("forward.file.start", start)
-
-	hash := calcHash(filename)
-	hashvalue := hash.Sum(nil)
-	// header := fmt.Sprintf("DD-FILETRANSFER BEGIN v2 %s %s %d %x", name, dir, info.Size, hash.Sum(nil)) // :filename:directory:size:hash:
-
-	file, err := os.Open(filename)
-	if err != nil {
-		logger.Error("Filetransfer", "Failed to open %s", filename)
-		return err
-	}
-
-	// Always send packets of 1200 bytes, regardless
-	content := make([]byte, 512*1024)
-	n := 0
-	block := &types.FileTransferBlock{TransferId: id, BlockNo: 0, FileIndex: 0}
-	subject := fmt.Sprintf("forward.file.%s.block", id)
-	errstr := ""
-
-	for err == nil {
-		// each message starts with a 4 byte sequence number, then 4 bytes of size of payload, then payload
-		n, err = file.Read(content)
-		if n > 0 {
-			block.Payload = content[:n]
-			block.Size = uint64(n)
-			block.FileIndex += block.Size
-			if err = ddnats.Publish(subject, block); err != nil {
-				errstr = logger.Error("NATS error", "Failed to publish file block, err: %s", err.Error()).Error()
-			}
-
-			block.BlockNo++
-			block.FileIndex += uint64(n)
-			time.Sleep(10 * time.Millisecond)
-
-			// if block.BlockNo%1000 == 0 {
-			// 	percent := float64(block.FileIndex) / float64(info.Size) * 100.0
-			// 	progress := &types.FileProgress{File: info, TotalSent: int(block.FileIndex), PercentDone: percent}
-			// 	ddnats.Publish("ui.filetransfer.progress", progress)
-			// 	time.Sleep(10 * time.Millisecond)
-			// }
-		}
-	}
-
-	file.Close()
-	end := types.FileTransferEnd{TransferId: id, TotalBlocks: block.BlockNo, TotalSize: block.FileIndex, Hash: hashvalue, Error: errstr}
-	ddnats.Publish("forward.file.end", end)
-
-	todir := path.Join(ctx.basedir, ctx.donedir, dir)
-	if err != nil && err != io.EOF {
-		logger.Trace("File transfer failed", "Ended up with an error: %s", err.Error())
-		todir = path.Join(ctx.basedir, ctx.faildir, dir)
-	}
-
-	os.MkdirAll(todir, 0755)
-
-	movename := path.Join(todir, name)
-	if err = os.Rename(filename, movename); err == nil {
-		logger.Trace("File transfer complete", "File %s, size %d transferred, err: %s", filename, info.Size, errstr)
-	} else {
-		logger.Error("Failed to move file", "Error when attempting to move file after file was transferred, file %s, size %d, error %s", filename, info.Size, err.Error())
-	}
-
-	ddnats.Publish("ui.filetransfer.complete", end)
-
-	time.Sleep(time.Millisecond)
-
-	return err
 }
 
 func calcHash(filename string) hash.Hash {

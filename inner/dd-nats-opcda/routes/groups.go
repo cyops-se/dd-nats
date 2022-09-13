@@ -4,26 +4,47 @@ import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
 	"dd-nats/common/logger"
-	"dd-nats/inner/dd-nats-opcda/data"
+	"dd-nats/common/types"
+	"dd-nats/inner/dd-nats-opcda/app"
 	"dd-nats/inner/dd-nats-opcda/messages"
 	"encoding/json"
-	"log"
 
 	"github.com/nats-io/nats.go"
 )
 
 func registerGroupRoutes() {
 	ddnats.Subscribe("usvc.opc.groups.getall", getAllOpcGroups)
+	ddnats.Subscribe("usvc.opc.groups.getbyid", getOpcGroupById)
 	ddnats.Subscribe("usvc.opc.groups.add", addOpcGroups)
 	ddnats.Subscribe("usvc.opc.groups.update", updateOpcGroups)
 	ddnats.Subscribe("usvc.opc.groups.delete", deleteOpcGroups)
 	ddnats.Subscribe("usvc.opc.groups.deleteall", deleteAllOpcGroups)
+	ddnats.Subscribe("usvc.opc.groups.start", startOpcGroup)
+	ddnats.Subscribe("usvc.opc.groups.stop", stopOpcGroup)
 }
 
 func getAllOpcGroups(nmsg *nats.Msg) {
+	var err error
+	var response messages.OpcGroupItemsResponse
+	response.Success = true
+	if response.Items, err = app.GetGroups(); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	}
+
+	ddnats.Respond(nmsg, response)
+}
+
+func getOpcGroupById(nmsg *nats.Msg) {
+	var err error
 	var response messages.OpcGroupItemResponse
 	response.Success = true
-	if err := db.DB.Find(&response.Items).Error; err != nil {
+
+	var intmsg types.IntMessage
+	if err = json.Unmarshal(nmsg.Data, &intmsg); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	} else if response.Item, err = app.GetGroup(uint(intmsg.Value)); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	}
@@ -32,7 +53,6 @@ func getAllOpcGroups(nmsg *nats.Msg) {
 }
 
 func addOpcGroups(nmsg *nats.Msg) {
-	log.Println("add payload:", string(nmsg.Data))
 	response := messages.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
@@ -49,7 +69,6 @@ func addOpcGroups(nmsg *nats.Msg) {
 }
 
 func updateOpcGroups(nmsg *nats.Msg) {
-	log.Println("update payload:", string(nmsg.Data))
 	response := messages.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
@@ -58,12 +77,12 @@ func updateOpcGroups(nmsg *nats.Msg) {
 	} else {
 		// Clear default flag for all but one
 		for n, item := range items.Items {
-			if item.Default {
+			if item.DefaultGroup {
 				for i := n + 1; i < len(items.Items); i++ {
-					items.Items[i].Default = false
+					items.Items[i].DefaultGroup = false
 				}
 
-				if err := db.DB.Exec("update opc_group_items set 'default' = false").Error; err != nil {
+				if err := db.DB.Exec("update opc_group_items set 'default_group' = false").Error; err != nil {
 					logger.Error("updateOpcGroups error", "failed to reset default group flag, error: %s", err.Error())
 				}
 				break
@@ -98,10 +117,51 @@ func deleteOpcGroups(nmsg *nats.Msg) {
 
 func deleteAllOpcGroups(nmsg *nats.Msg) {
 	response := messages.StatusResponse{Success: true}
-	var dbitems []data.OpcTagItem
-	if err := db.DB.Delete(&dbitems, "1 = 1").Error; err != nil {
+	var items []app.OpcTagItem
+	if err := db.DB.Delete(&items, "1 = 1").Error; err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	}
+	ddnats.Respond(nmsg, response)
+}
+
+func startOpcGroup(nmsg *nats.Msg) {
+	response := messages.StatusResponse{Success: true}
+
+	var intmsg types.IntMessage
+	var group app.OpcGroupItem
+	if err := json.Unmarshal(nmsg.Data, &intmsg); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	} else if group, err = app.GetGroup(uint(intmsg.Value)); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	}
+
+	if err := app.StartGroup(&group); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	}
+
+	ddnats.Respond(nmsg, response)
+}
+func stopOpcGroup(nmsg *nats.Msg) {
+	response := messages.StatusResponse{Success: true}
+
+	var intmsg types.IntMessage
+	var group app.OpcGroupItem
+	if err := json.Unmarshal(nmsg.Data, &intmsg); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	} else if group, err = app.GetGroup(uint(intmsg.Value)); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	}
+
+	if err := app.StopGroup(&group); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	}
+
 	ddnats.Respond(nmsg, response)
 }

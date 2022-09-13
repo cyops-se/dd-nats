@@ -6,17 +6,20 @@ type DataPointInfo struct {
 	Name string `json:"name"`
 }
 
-type DataPointValue struct {
-	Name    string  `json:"n"`
-	Value   float64 `json:"v"`
-	Quality int     `json:"q"`
+type DataPoint struct {
+	Time    time.Time `json:"t"`
+	Name    string    `json:"n"`
+	Value   float64   `json:"v"`
+	Quality int       `json:"q"`
 }
 
-type DataPointValues []DataPointValue
+type DataPoints []DataPoint
 
 type DataPointSample struct {
-	Timestamp time.Time       `json:"time"`
-	Values    DataPointValues `json:"values"`
+	Version  int        `json:"version"`
+	Sequence uint64     `json:"sequence"`
+	Group    string     `json:"group"`
+	Points   DataPoints `json:"points"`
 }
 
 type DataPointSamples []DataPointSample

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -16,6 +17,7 @@ import (
 var udpconn *net.UDPConn
 
 func main() {
+	svcName := "dd-nats-outer-proxy"
 	if err := listenUDP(); err != nil {
 		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
@@ -27,6 +29,10 @@ func main() {
 		return
 	}
 
+	// Set up heartbeat
+	go ddnats.SendHeartbeat(svcName)
+
+	// Start receiving UDP messages
 	go readUDP(nc)
 
 	// Sleep until interrupted
@@ -55,9 +61,12 @@ func listenUDP() (err error) {
 func readUDP(nc *nats.Conn) {
 	packetsize := 1200
 	packet := make([]byte, packetsize)
+	count := 0
+	total := uint64(0)
 
 	// Look for $MAGIC8$
 	for {
+		start := time.Now().UnixNano()
 		_, _, err := udpconn.ReadFromUDP(packet)
 		if err != nil {
 			// log.Printf("Failed to read MAGIC8 packet, err: %s", err.Error())
@@ -109,10 +118,13 @@ func readUDP(nc *nats.Conn) {
 		}
 
 		nc.Publish(subject, mdata)
-		// log.Printf("published subject: %s, data: %s", subject, string(mdata))
-		// log.Printf("published subject: %s", subject)
-	}
 
+		count++
+		total += uint64(time.Now().UnixNano()) - uint64(start)
+		if count%100 == 0 {
+			log.Printf("One message takes %f nanoseconds in average", float64(total)/float64(count))
+		}
+	}
 }
 
 func parseMagic8Packet(packet []byte) (uint32, uint32, uint32, string, error) {

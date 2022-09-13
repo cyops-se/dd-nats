@@ -1,6 +1,6 @@
 package messages
 
-import "dd-nats/inner/dd-nats-opcda/data"
+import "dd-nats/inner/dd-nats-opcda/app"
 
 // Common
 
@@ -8,8 +8,16 @@ type Tag struct {
 	Tag string `json:"tag"`
 }
 
+type Tags struct {
+	Items []Tag `json:"items"`
+}
+
+type OpcItems struct {
+	Items []app.OpcTagItem `json:"items"`
+}
+
 type Groups struct {
-	Items []data.OpcGroupItem `json:"items"`
+	Items []app.OpcGroupItem `json:"items"`
 }
 
 // Requests
@@ -29,10 +37,15 @@ type BrowserPosition struct {
 
 type OpcTagItemResponse struct {
 	StatusResponse
-	Items []data.OpcTagItem `json:"items"`
+	Items []*app.OpcTagItem `json:"items"`
 }
 
 type OpcGroupItemResponse struct {
 	StatusResponse
-	Items []data.OpcGroupItem `json:"items"`
+	Item app.OpcGroupItem `json:"item"`
+}
+
+type OpcGroupItemsResponse struct {
+	StatusResponse
+	Items []*app.OpcGroupItem `json:"items"`
 }

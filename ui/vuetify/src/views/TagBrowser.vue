@@ -98,7 +98,6 @@
         ApiService.get('data/key_value_pairs/field/key/tagpathdelimiter')
           .then(response => {
             if (response.data) this.delimiter = response.data[0].value
-            console.log('delimiter: ', this.delimiter)
           }).catch(response => {
             console.log('Failed to get delimiter: ' + response.message)
           })
@@ -110,7 +109,6 @@
           // ApiService.get('opc/tag/names')
           .then(response => {
             this.tags = response.data.items
-            console.log('tags: ', JSON.stringify(this.tags))
           }).catch(response => {
             console.log('ERROR response: ' + response.message)
             this.$notification.error('Failed to get tags: ' + response.message)
@@ -118,7 +116,6 @@
       },
 
       rootSelected () {
-        console.log('root selected')
         this.items = []
         var request = { subject: 'usvc.opc.servers.root', payload: { value: parseInt(this.$route.params.serverid) } }
         ApiService.post('nats/request', request)
@@ -142,32 +139,18 @@
           })
       },
 
-      tagSelected (selecteditems) {
-        if (selecteditems && selecteditems.length > 0 && selecteditems.length !== this.tags.length) {
-          console.log('posting tags: ' + JSON.stringify(selecteditems))
-          ApiService.post('opc/tag/names', selecteditems)
-            .then(({ data }) => {
-              console.log('new tags response: ' + JSON.stringify(data))
-            }).then(data => {
-              this.refresh()
-            }).catch(response => {
-              console.log('new tags ERROR response: ' + response.message)
-            })
-        }
-      },
-
       activated (item) {
-        console.log('item toggled' + JSON.stringify(item))
-        var op = item.file === 'tag' ? 'delete' : 'add'
+        var op = item.file === 'tag' ? 'deletebyname' : 'add'
         var tag = item.path.replaceAll('/', this.delimiter)
-        var payload = { serverid: parseInt(this.$route.params.serverid), tag: tag }
+        var payload = { serverid: parseInt(this.$route.params.serverid), items: [{ tag: tag }] }
         var request = { subject: 'usvc.opc.tags.' + op, payload }
         ApiService.post('nats/request', request)
           .then(response => {
-            console.log('new tags response: ' + JSON.stringify(response))
-            this.refresh()
             if (response.data.success) {
+              this.refresh()
               item.file = item.file === 'tag' ? 'tagoutline' : 'tag'
+            } else {
+              this.$notification.error('Failed to ' + op + ' tag: ' + response.data.statusmsg)
             }
           }).catch(response => {
             console.log('new tags ERROR response: ' + response.message)
@@ -175,9 +158,7 @@
       },
 
       async loadBranch (item) {
-        console.log('branch item: ' + JSON.stringify(item))
         var branch = item.path.replaceAll('/', '.')
-        console.log('loading', branch)
         var payload = { serverid: parseInt(this.$route.params.serverid), branch: branch }
         var request = { subject: 'usvc.opc.servers.getbranch', payload }
         return ApiService.post('nats/request', request)

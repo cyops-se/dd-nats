@@ -23,24 +23,27 @@
 
     <v-spacer />
 
+    <usvc-mini-card usvc="dd-nats-inner-proxy" />
+
     <default-go-home />
 
-    <default-account />
+    <!-- default-account / -->
   </v-app-bar>
 </template>
 
 <script>
   // Utilities
   import { get, sync } from 'vuex-pathify'
+  import UsvcMiniCard from '../../components/usvc/UsvcMiniCard.vue'
 
   export default {
     name: 'DefaultBar',
 
     components: {
-      DefaultAccount: () => import(
-        /* webpackChunkName: "default-account" */
-        './widgets/Account'
-      ),
+      // DefaultAccount: () => import(
+      //   /* webpackChunkName: "default-account" */
+      //   './widgets/Account'
+      // ),
       DefaultDrawerToggle: () => import(
         /* webpackChunkName: "default-drawer-toggle" */
         './widgets/DrawerToggle'
@@ -49,6 +52,7 @@
         /* webpackChunkName: "default-go-home" */
         './widgets/GoHome'
       ),
+      UsvcMiniCard,
     },
 
     computed: {

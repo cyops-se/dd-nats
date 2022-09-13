@@ -31,13 +31,21 @@ const WebsocketService = {
     // console.log('Websocket message: ' + JSON.stringify(data))
 
     if (!data || !data.topic || !data.message) return
-    // var message = JSON.parse(data.message)
     var message = data.message
+    if (typeof data.message === 'string') {
+      message = JSON.parse(data.message)
+    }
 
     // console.log('Websocket topic: ' + JSON.stringify(data.topic))
     // console.log('Websocket message: ' + JSON.stringify(message))
     if (this.subscriptions) {
-      const subs = this.subscriptions[data.topic]
+      var subs = this.subscriptions[data.topic]
+      if (!subs) {
+        // pick out the last part of the subject and replace with * to look for wildcards
+        var parts = data.topic.split('.')
+        var topic = data.topic.replace(parts[parts.length - 1], '*')
+        subs = this.subscriptions[topic]
+      }
       if (subs) {
         for (var i = 0; i < subs.length; i++) {
           subs[i].callback(data.topic, message, subs[i].target)

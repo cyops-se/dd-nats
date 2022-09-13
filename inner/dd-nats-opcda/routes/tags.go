@@ -3,9 +3,10 @@ package routes
 import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
-	"dd-nats/inner/dd-nats-opcda/data"
+	"dd-nats/inner/dd-nats-opcda/app"
 	"dd-nats/inner/dd-nats-opcda/messages"
 	"encoding/json"
+	"log"
 
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm/clause"
@@ -16,6 +17,7 @@ func registerTagRoutes() {
 	ddnats.Subscribe("usvc.opc.tags.add", addOpcTags)
 	ddnats.Subscribe("usvc.opc.tags.update", updateOpcTags)
 	ddnats.Subscribe("usvc.opc.tags.delete", deleteOpcTags)
+	ddnats.Subscribe("usvc.opc.tags.deletebyname", deleteOpcTagByName)
 	ddnats.Subscribe("usvc.opc.tags.deleteall", deleteAllOpcTags)
 }
 
@@ -32,16 +34,26 @@ func getAllOpcTags(nmsg *nats.Msg) {
 
 func addOpcTags(nmsg *nats.Msg) {
 	response := messages.StatusResponse{Success: true}
-	var item messages.Tag
-	if err := json.Unmarshal(nmsg.Data, &item); err != nil {
+	var items messages.Tags
+	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
-		dbitem := data.OpcTagItem{}
-		dbitem.Name = item.Tag
-		if err = db.DB.Create(&dbitem).Error; err != nil {
-			response.Success = false
-			response.StatusMessage = err.Error()
+		var groupid uint
+		group, err := app.GetDefaultGroup()
+		if err == nil && group != nil {
+			groupid = group.ID
+		} else {
+			log.Println("Failed to find default group, err:", err.Error())
+		}
+
+		for _, item := range items.Items {
+			dbitem := app.OpcTagItem{GroupID: int(groupid)}
+			dbitem.Name = item.Tag
+			if err = db.DB.Create(&dbitem).Error; err != nil {
+				response.Success = false
+				response.StatusMessage = err.Error()
+			}
 		}
 	}
 
@@ -50,12 +62,12 @@ func addOpcTags(nmsg *nats.Msg) {
 
 func updateOpcTags(nmsg *nats.Msg) {
 	response := messages.StatusResponse{Success: true}
-	var item data.OpcTagItem
-	if err := json.Unmarshal(nmsg.Data, &item); err != nil {
+	var items messages.OpcItems
+	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
-		if err = db.DB.Save(&item).Error; err != nil {
+		if err = db.DB.Save(&items.Items).Error; err != nil {
 			response.Success = false
 			response.StatusMessage = err.Error()
 		}
@@ -65,13 +77,42 @@ func updateOpcTags(nmsg *nats.Msg) {
 }
 
 func deleteOpcTags(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: false, StatusMessage: "Method not yet implemented: deleteOpcTags"}
+	response := messages.StatusResponse{Success: true}
+	var items messages.OpcItems
+	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	} else {
+		if err = db.DB.Delete(&items.Items).Error; err != nil {
+			response.Success = false
+			response.StatusMessage = err.Error()
+		}
+	}
+
+	ddnats.Respond(nmsg, response)
+}
+
+func deleteOpcTagByName(nmsg *nats.Msg) {
+	response := messages.StatusResponse{Success: true}
+	var items messages.Tags
+	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	} else {
+		for _, item := range items.Items {
+			if err = db.DB.Delete(&app.OpcTagItem{}, "name = ?", item.Tag).Error; err != nil {
+				response.Success = false
+				response.StatusMessage = err.Error()
+			}
+		}
+	}
+
 	ddnats.Respond(nmsg, response)
 }
 
 func deleteAllOpcTags(nmsg *nats.Msg) {
 	response := messages.StatusResponse{Success: true}
-	var dbitems []data.OpcTagItem
+	var dbitems []app.OpcTagItem
 	if err := db.DB.Delete(&dbitems, "1 = 1").Error; err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()

@@ -7,7 +7,6 @@ import (
 	"dd-nats/inner/dd-nats-opcda/messages"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/cyops-se/opc"
@@ -67,7 +66,9 @@ func getOpcServerRoot(nmsg *nats.Msg) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	response := &messages.BrowserPosition{}
+	var response messages.BrowserPosition
+	response.Success = true
+
 	opc.MoveCursorHome(browser)
 	response.Branches = opc.CursorListBranches(browser)
 	response.Leaves = opc.CursorListLeaves(browser)
@@ -92,6 +93,7 @@ func getOpcServerBranch(nmsg *nats.Msg) {
 	defer mutex.Unlock()
 
 	var response messages.BrowserPosition
+	response.Success = true
 
 	opc.MoveCursorTo(browser, msg.Branch)
 	response.Branches = opc.CursorListBranches(browser)
@@ -138,7 +140,6 @@ func initServers() {
 
 func getServerId(msg *nats.Msg) (int, error) {
 	var intmsg types.IntMessage
-	log.Println("msg.Data:", msg.Data)
 	if err := json.Unmarshal(msg.Data, &intmsg); err != nil {
 		return 0, err
 	}

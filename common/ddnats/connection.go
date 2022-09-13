@@ -32,7 +32,7 @@ func SendHeartbeat(appname string) {
 
 	for {
 		<-ticker.C
-		heartbeat := &types.Heartbeat{Hostname: hostname, AppName: appname, Version: "0.0.1"}
+		heartbeat := &types.Heartbeat{Hostname: hostname, AppName: appname, Version: "0.0.1", Timestamp: time.Now().UTC()}
 		payload, _ := json.Marshal(heartbeat)
 		lnc.Publish("system.heartbeat", payload)
 	}

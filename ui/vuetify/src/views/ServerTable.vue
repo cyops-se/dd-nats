@@ -82,7 +82,6 @@
     methods: {
       initialize () {},
       rowclick (item) {
-        console.log('row clicked: ' + JSON.stringify(item))
         this.$router.push({ name: 'TagBrowser', params: { serverid: item.id } })
       },
 

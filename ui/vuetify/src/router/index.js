@@ -24,11 +24,11 @@ const router = new Router({
       route('Dashboard', null, '/'),
 
       // Pages
-      route('ServerTable', null, 'pages/servers'),
-      route('TagBrowser', null, 'pages/browse/:serverid'),
-      route('GroupTable', null, 'pages/groups'),
-      route('Tag Table', null, 'pages/tags'),
-      route('History', null, 'pages/cache'),
+      route('ServerTable', null, 'pages/opc/servers'),
+      route('TagBrowser', null, 'pages/opc/browse/:serverid'),
+      route('GroupTable', null, 'pages/opc/groups'),
+      route('Tag Table', null, 'pages/opc/tags'),
+      route('History', null, 'pages/process/cache'),
       route('System Settings', null, 'pages/systemsettings'),
       route('File Transfer', null, 'pages/filetransfer'),
 

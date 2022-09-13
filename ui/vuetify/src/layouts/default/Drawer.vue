@@ -22,7 +22,7 @@
           :key="link.text"
         >
           <v-list-item
-            v-if="!link.subLinks && showitem(link)"
+            v-if="!link.sublinks && showitem(link)"
             :to="link.to"
             class="v-list-item"
             :active-class="`${color} lighten-3 ${theme.isDark ? 'black' : 'white'}--text`"
@@ -49,14 +49,16 @@
             </template>
 
             <v-list-item
-              v-for="sublink in link.subLinks"
+              v-for="sublink in link.sublinks"
               :key="sublink.text"
               :to="sublink.to"
               :active-class="`${color} lighten-3 ${theme.isDark ? 'black' : 'white'}--text`"
             >
-              <!--v-list-item-icon>
+              <!--
+              <v-list-item-icon>
                 <v-icon>{{ sublink.icon }}</v-icon>
-              </v-list-item-icon-->
+              </v-list-item-icon>
+              -->
               <v-list-item-title>{{ sublink.text }}</v-list-item-title>
             </v-list-item>
           </v-list-group>
@@ -139,21 +141,48 @@
         },
         {
           icon: 'mdi-server',
-          text: 'OPC DA Servers',
-          to: '/pages/servers',
+          text: 'OPC DA',
           usvc: 'ddnatsopcda',
+          sublinks: [
+            {
+              icon: 'mdi-server',
+              text: 'Servers',
+              to: '/pages/opc/servers',
+            },
+            {
+              icon: 'mdi-folder-multiple',
+              text: 'Sampling Groups',
+              to: '/pages/opc/groups',
+            },
+            {
+              icon: 'mdi-tag-multiple',
+              text: 'Tags',
+              to: '/pages/opc/tags',
+            },
+          ],
         },
         {
-          icon: 'mdi-folder-multiple',
-          text: 'Sampling Groups',
-          to: '/pages/groups',
-          usvc: 'ddnatsopcda|ddnatsmodbus',
-        },
-        {
-          icon: 'mdi-tag-multiple',
-          text: 'Tags',
-          to: '/pages/tags',
-          usvc: 'ddnatsopcda|ddnatsmodbus',
+          icon: 'mdi-server',
+          text: 'Modbus',
+          to: '/pages/servers',
+          usvc: 'ddnatsmodbus',
+          sublinks: [
+            {
+              icon: 'mdi-server',
+              text: 'Servers',
+              to: '/pages/servers',
+            },
+            {
+              icon: 'mdi-folder-multiple',
+              text: 'Sampling Groups',
+              to: '/pages/groups',
+            },
+            {
+              icon: 'mdi-tag-multiple',
+              text: 'Tags',
+              to: '/pages/tags',
+            },
+          ],
         },
         {
           icon: 'mdi-history',
@@ -193,9 +222,8 @@
     },
 
     created () {
-      WebsocketService.topic('system.heartbeat', this, function (topic, jsonstr, t) {
+      WebsocketService.topic('system.heartbeat', this, function (topic, msg, t) {
         if (t.services) {
-          var msg = JSON.parse(jsonstr)
           var appname = msg.appname.replaceAll('-', '')
           t.services = { ...t.services, [appname]: { name: appname, state: 'alive', count: 0, lastbeat: new Date() } }
         }
@@ -239,5 +267,9 @@
 #default-drawer
   .v-list-group__items
     .v-list-item
-      font-size: .8rem
+      min-height: 28px
+      .v-list-item__title
+        padding-left: 10px
+        font-size: .75rem
+
 </style>

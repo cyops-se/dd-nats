@@ -3,7 +3,6 @@ package ddnats
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/nats-io/nats.go"
 )
@@ -18,7 +17,7 @@ func Publish(subject string, response interface{}) error {
 		return fmt.Errorf("Failed to publish subject '%s': %s", subject, err.Error())
 	}
 
-	return lnc.Publish(subject, []byte(data))
+	return lnc.Publish(subject, data)
 }
 
 func PublishError(f string, a ...interface{}) error {
@@ -37,6 +36,10 @@ func Respond(msg *nats.Msg, response interface{}) error {
 		return fmt.Errorf("Failed to respond to request with subject '%s': %s", msg.Subject, err.Error())
 	}
 
-	log.Println("nats.respond: ", string(data), response)
+	// log.Println("nats.respond: ", string(data), response)
 	return msg.Respond([]byte(data))
+}
+
+func Event(subject string, arg interface{}) error {
+	return Publish("system.event."+subject, arg)
 }

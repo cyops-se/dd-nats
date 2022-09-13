@@ -23,15 +23,15 @@
           <span class="text-h3 text-no-wrap">
             {{ copy.name }}
           </span>
-          <span class="text-h4 text-no-wrap">
-            {{ copy.status >= 1 ? 'RUNNING' : 'STOPPED' }}
-          </span>
+          <!-- <span class="text-h4 text-no-wrap">
+            {{ copy.state >= 2 ? 'RUNNING' : 'STOPPED' }}
+          </span> -->
           <div>Send count: {{ copy.counter }}</div>
         </div>
         <v-spacer />
         <div class="my-auto mr-3">
           <v-btn @click="startStop">
-            <div v-html="copy.status >= 1 ? 'STOP' : 'START'" />
+            <div v-html="copy.state >= 2 ? 'STOP' : 'START'" />
           </v-btn>
         </div>
       </v-sheet>
@@ -59,6 +59,7 @@
         </v-icon>
 
         <span
+          v-if="copy && copy.lastrun"
           class="text-caption grey--text font-weight-light"
           v-text="'Last run: ' + copy.lastrun.replace('T', ' ').substring(0, 19)"
         />
@@ -99,61 +100,46 @@
 
     created () {
       this.copy = Object.assign({}, this.group)
-      this.color = this.group.status === 0 ? 'error' : this.group.status === 1 ? 'success' : 'warning'
-      WebsocketService.topic('data.group', this, function (topic, group, target) {
-        if (target.copy.ID === group.ID) target.updateGroup(target, group)
-      })
-      WebsocketService.topic('group.failed', this, function (topic, group, target) {
-        if (target.copy.ID === group.ID) target.updateGroup(target, group)
-      })
-      WebsocketService.topic('group.started', this, function (topic, group, target) {
-        if (target.copy.ID === group.ID) {
-          target.updateGroup(target, group)
-          target.$notification.success('Group started')
-        }
-      })
-      WebsocketService.topic('group.stopped', this, function (topic, group, target) {
-        if (target.copy.ID === group.ID) {
-          group.status = 0
-          target.updateGroup(target, group)
-          target.$notification.success('Group stopped')
-        }
-      })
-      WebsocketService.topic('group.warning', this, function (topic, group, target) {
-        if (target.copy.ID === group.ID) {
-          target.updateGroup(target, group)
-          target.$notification.warning('Partial start of group, see logs')
-        }
+      this.color = this.group.state < 2 ? 'error' : this.group.state === 2 ? 'success' : 'warning'
+      var subject = 'system.event.group.' + this.group.id + '.*'
+      WebsocketService.topic(subject, this, function (topic, group, target) {
+        target.updateGroup(target, group)
       })
     },
 
     methods: {
       startStop () {
-        var action = this.copy.status >= 1 ? 'stop' : 'start'
-        ApiService.get('opc/group/' + action + '/' + this.group.ID)
+        var action = this.copy.state >= 2 ? 'stop' : 'start'
+        var request = { subject: 'usvc.opc.groups.' + action, payload: { value: parseInt(this.group.id) } }
+        ApiService.post('nats/request', request)
           .then(response => {
+            if (response.data.success) {
+              // this.copy = response.data.item
+              this.$notification.success('Group ' + action + ' succeeded')
+            } else {
+              this.$notification.error('Failed to ' + action + ' group: ' + response.data.statusmsg)
+            }
           }).catch(response => {
-            this.$notification.error('Failed to start group')
-            // console.log('ERROR response: ' + response.message)
-            // this.$notification.error('Failed to start collection of group tags: ' + response.message)
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to ' + action + ' group: ' + response.message)
           })
       },
 
       refresh () {
-        ApiService.get('opc/group/' + this.group.ID)
+        var request = { subject: 'usvc.opc.groups.getbyid', payload: { value: parseInt(this.group.id) } }
+        ApiService.post('nats/request', request)
           .then(response => {
-            this.copy = response.data
+            this.copy = response.data.item
           }).catch(response => {
-            console.log('ERROR response (refresh): ' + response.message)
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to get groups: ' + response.message)
           })
       },
 
       updateGroup (target, group) {
-        if (target.copy.ID === group.ID) {
-          target.copy.status = group.status
-          target.color = group.status === 0 ? 'error' : group.status === 1 ? 'success' : 'warning'
-          target.copy = group
-        }
+        target.copy.state = group.state
+        target.color = group.state < 2 ? 'error' : group.state === 2 ? 'success' : 'warning'
+        target.copy = group
       },
     },
   }

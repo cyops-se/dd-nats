@@ -150,6 +150,7 @@
     name: 'GroupTableView',
 
     data: () => ({
+      states: ['unknown', 'stopped', 'running', 'warning'],
       dialog: false,
       dialogDelete: false,
       search: '',
@@ -164,6 +165,7 @@
         },
         { text: 'Name', value: 'name', width: '40%' },
         { text: 'OPC DA Server', value: 'progid', width: '40%' },
+        { text: 'State', value: 'statemsg', width: '10%' },
         { text: 'Sampling Interval (seconds)', value: 'interval', width: '10%' },
         { text: 'Default', value: 'defaultgroup', width: '5%' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
@@ -194,10 +196,12 @@
           // ApiService.get('opc/tag/names')
           .then(response => {
             this.items = response.data.items
-            console.log('groups: ', JSON.stringify(this.items))
+            for (var i = 0; i < this.items.length; i++) {
+              this.items[i].statemsg = this.states[this.items[i].state]
+            }
           }).catch(response => {
             console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to get tags: ' + response.message)
+            this.$notification.error('Failed to get groups: ' + response.message)
           })
 
         request = { subject: 'usvc.opc.servers.getall' }
@@ -206,10 +210,10 @@
             for (var i = 0; i < response.data.length; i++) {
               this.availableProgids.push(response.data[i].progid)
             }
-            console.log('servers: ', JSON.stringify(this.availableProgids))
             this.loading = false
           }).catch(response => {
             console.log('ERROR response: ' + JSON.stringify(response))
+            this.$notification.error('Failed to get servers: ' + response.message)
           })
       },
 

@@ -41,25 +41,17 @@
 
     created () {
       var t = this
-      WebsocketService.topic('filetransfer.request', this, function (topic, info) {
+      WebsocketService.topic('system.event.filetransfer.request', this, function (topic, info) {
         t.progress = { file: info, percentdone: 0.0 }
       })
 
-      WebsocketService.topic('filetransfer.progress', this, function (topic, progress) {
-        t.progress = progress
+      WebsocketService.topic('system.event.filetransfer.progress', this, function (topic, progress) {
+        t.progress.percentdone = progress.percent
       })
 
-      WebsocketService.topic('filetransfer.complete', this, function (topic, info) {
+      WebsocketService.topic('system.event.filetransfer.complete', this, function (topic, info) {
         t.progress = undefined
       })
-
-      ApiService.get('filetransfer')
-        .then((response) => {
-          this.info = response.data
-        })
-        .catch((response) => {
-          console.log('ERROR response: ' + JSON.stringify(response))
-        })
     },
 
     methods: {

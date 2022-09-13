@@ -93,6 +93,7 @@ func RunWeb(args types.Context) {
 	routes.RegisterDataRoutes(api)
 	routes.RegisterSystemRoutes(api)
 	routes.RegisterNatsRoutes(api)
+	routes.RegisterFileTransferRoutes(api)
 
 	ddnats.Subscribe("stats.>", func(m *nats.Msg) {
 		NotifySubscribers(m.Subject, string(m.Data))
@@ -106,6 +107,10 @@ func RunWeb(args types.Context) {
 		NotifySubscribers(m.Subject, string(m.Data))
 	})
 
+	ddnats.Subscribe("inner.system.>", func(m *nats.Msg) {
+		NotifySubscribers(m.Subject, string(m.Data))
+	})
+
 	app.Listen(":3000")
 
 	select {}
@@ -116,7 +121,7 @@ func RegisterWebsocket(c *websocket.Conn) {
 	defer wsMutex.Unlock()
 	ws = append(ws, c)
 	log.Printf("Adding subscriber: %d", len(ws)-1)
-	msg := &WebSocketMessage{Topic: "ws.meta", Message: "Subscription registered"}
+	msg := &WebSocketMessage{Topic: "ws.meta", Message: "{\"msg\": \"Subscription registered\"}"}
 	c.WriteJSON(msg)
 }
 
