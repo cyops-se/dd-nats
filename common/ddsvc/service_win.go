@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package ddsvc
 
 import (
 	"dd-nats/common/logger"
+	"dd-nats/common/types"
+	"flag"
 	"fmt"
 	"log"
 	"strings"
@@ -18,7 +21,8 @@ import (
 )
 
 type myservice struct {
-	engine func()
+	usvc   *DdUsvc
+	engine func(*DdUsvc)
 }
 
 func handlePanic() {
@@ -39,6 +43,32 @@ func reportInfo(f string, args ...interface{}) {
 	logger.Trace("Windows service info", msg)
 }
 
+func processArgs(svcName string) *types.Context {
+	ctx := &types.Context{}
+	flag.StringVar(&ctx.Cmd, "cmd", "debug", "Windows service command (try 'usage' for more info)")
+	flag.StringVar(&ctx.Wdir, "workdir", ".", "Sets the working directory for the process")
+	flag.BoolVar(&ctx.Trace, "trace", false, "Prints traces from the application to the console")
+	flag.BoolVar(&ctx.Version, "v", false, "Prints the commit hash and exits")
+	flag.StringVar(&ctx.Name, "name", svcName, "Sets the name of the service")
+	flag.StringVar(&ctx.NatsUrl, "nats", "nats://localhost:4222", "URL to NATS service")
+	flag.IntVar(&ctx.Port, "port", 3000, "Port for HTTP user interface, if supported by service")
+	flag.Parse()
+
+	if ctx.Cmd == "install" {
+		if err := installService(svcName, "from cyops-se"); err != nil {
+			log.Fatalf("failed to %s %s: %v", ctx.Cmd, svcName, err)
+		}
+		return nil
+	} else if ctx.Cmd == "remove" {
+		if err := removeService(svcName); err != nil {
+			log.Fatalf("failed to %s %s: %v", ctx.Cmd, svcName, err)
+		}
+		return nil
+	}
+
+	return ctx
+}
+
 func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
 	defer handlePanic()
 
@@ -49,8 +79,8 @@ func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes c
 	tick := fasttick
 	changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
 
-	reportInfo("starting engine")
-	go m.engine()
+	reportInfo("starting engine %s", m.usvc.Name)
+	go m.engine(m.usvc)
 
 	reportInfo("entering service control loop")
 
@@ -83,27 +113,28 @@ loop:
 			}
 		}
 	}
+	reportInfo("exiting service control loop")
 	changes <- svc.Status{State: svc.StopPending}
 	return
 }
 
-func RunService(name string, engine func()) {
+func RunService(usvc *DdUsvc, engine func(*DdUsvc)) {
 	var err error
-	reportInfo("starting %s service", name)
+	reportInfo("starting %s service", usvc.Name)
 	run := svc.Run
 
 	inService, err := svc.IsWindowsService()
 	if err != nil {
-		log.Fatalf("failed to determine if we are running in service: %v", err)
+		log.Fatalf("failed to determine if we are running in service: %s", err.Error())
 	}
 	if !inService {
 		run = debug.Run
 	}
 
-	err = run(name, &myservice{engine: engine})
+	err = run(usvc.Name, &myservice{engine: engine, usvc: usvc})
 	if err != nil {
-		reportError("%s service failed: %v", name, err)
+		reportError("%s service failed: %s", usvc.Name, err.Error())
 		return
 	}
-	reportInfo("%s service stopped", name)
+	reportInfo("%s service stopped", usvc.Name)
 }

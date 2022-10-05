@@ -3,6 +3,7 @@ package app
 import (
 	"crypto/sha256"
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"fmt"
@@ -31,7 +32,7 @@ type progress struct {
 
 var ctx *context
 
-func RunEngine() {
+func RunEngine(svc *ddsvc.DdUsvc) {
 	log.Println("Engine running ...")
 
 	// Watch folders for new data
@@ -109,8 +110,8 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 		return err
 	}
 
-	// Always send blocks of 512KB bytes, regardless
-	content := make([]byte, 512*1024)
+	// Always send blocks of 256KB bytes, regardless
+	content := make([]byte, 256*1024)
 	n := 0
 	block := &types.FileTransferBlock{TransferId: id, BlockNo: 0, FileIndex: 0}
 	subject := fmt.Sprintf("forward.file.%s.block", id)

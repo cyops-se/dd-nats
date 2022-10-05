@@ -3,6 +3,7 @@ package routes
 import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/inner/dd-nats-opcda/app"
 	"dd-nats/inner/dd-nats-opcda/messages"
 	"encoding/json"
@@ -33,7 +34,7 @@ func getAllOpcTags(nmsg *nats.Msg) {
 }
 
 func addOpcTags(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.Tags
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -61,7 +62,7 @@ func addOpcTags(nmsg *nats.Msg) {
 }
 
 func updateOpcTags(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.OpcItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -77,7 +78,7 @@ func updateOpcTags(nmsg *nats.Msg) {
 }
 
 func deleteOpcTags(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.OpcItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -93,7 +94,7 @@ func deleteOpcTags(nmsg *nats.Msg) {
 }
 
 func deleteOpcTagByName(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.Tags
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -111,7 +112,7 @@ func deleteOpcTagByName(nmsg *nats.Msg) {
 }
 
 func deleteAllOpcTags(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var dbitems []app.OpcTagItem
 	if err := db.DB.Delete(&dbitems, "1 = 1").Error; err != nil {
 		response.Success = false

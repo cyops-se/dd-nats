@@ -1,7 +1,9 @@
 package messages
 
+import "dd-nats/common/ddsvc"
+
 type FolderInfo struct {
-	StatusResponse
+	ddsvc.StatusResponse
 	NewDir        string `json:"base"`
 	ProcessingDir string `json:"processing"`
 	DoneDir       string `json:"done"`

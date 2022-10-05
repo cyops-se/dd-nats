@@ -3,6 +3,7 @@ package app
 import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 )
 
 var opcmutex sync.Mutex // Issue #3, no time to find out where thread insafety is (looks like it's in or below oleutil)
+var failedtags []*OpcTagItem
+var lastcheck time.Time
 
 func read(client *opc.Connection) map[string]opc.Item {
 	opcmutex.Lock()
@@ -81,6 +84,8 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 	for _, tag := range tags {
 		if err := client.AddSingle(tag.Name); err != nil {
 			logger.Log("warning", "Unable to collect tag", fmt.Sprintf("%s, group: %s, progid: %s", tag.Name, group.Name, group.ProgID))
+			failedtags = append(failedtags, tag)
+			lastcheck = time.Now()
 		}
 	}
 
@@ -93,11 +98,11 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 	// Initiate group running state
 	if len(client.Tags()) != len(tags) {
 		group.State = GroupStateRunningWithWarning
-		// ddnats.Event("group.warning", group)
+		logger.Info("OPC group warning", "Group %s WARNING", group.Name)
 		ddnats.Event(fmt.Sprintf("group.%d.warning", group.ID), group)
 	} else {
 		group.State = GroupStateRunning
-		// ddnats.Event("group.started", group)
+		logger.Info("OPC group started", "Group %s STARTED", group.Name)
 		ddnats.Event(fmt.Sprintf("group.%d.started", group.ID), group)
 	}
 
@@ -113,7 +118,7 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 	var i, b int // golang always initialize to 0
 	for {
 		if g, e := GetGroup(group.ID); e == nil && g.State == GroupStateStopped {
-			logger.Log("info", "OPC group stopped", fmt.Sprintf("Group interval timer STOPPED, group: %s", group.Name))
+			logger.Info("OPC group stopped", "Group %s STOPPED", group.Name)
 			ddnats.Event(fmt.Sprintf("group.%d.stopped", group.ID), g)
 			// ddnats.Event("group.stopped", group)
 			break
@@ -141,8 +146,6 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 			i++
 		}
 
-		ddnats.Event("process.message", msg)
-
 		group.LastRun = time.Now()
 		group.Counter = group.Counter + uint64(len(items))
 
@@ -150,11 +153,26 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 		ddnats.Event(fmt.Sprintf("group.%d.updated", group.ID), group)
 
 		<-timer.C
+
+		// Try to add failed items every minute
+		if len(failedtags) > 0 && group.LastRun.Sub(lastcheck) > time.Minute {
+			for ti, tag := range failedtags {
+				if err := client.AddSingle(tag.Name); err == nil {
+					failedtags = append(failedtags[:ti], failedtags[ti+1:]...)
+				}
+			}
+
+			lastcheck = time.Now()
+			if len(failedtags) == 0 {
+				group.State = GroupStateRunning
+				logger.Info("OPC group items", "All failing items in group %s are now successfully read again", group.Name)
+			}
+		}
 	}
 }
 
-func InitGroups() {
-	db.InitSetting("tagpathdelimiter", ".", "Delimiter in OPC DA tag paths. Differs between OPC DA servers")
+func InitGroups(svc *ddsvc.DdUsvc) {
+	svc.Set("tagpathdelimiter", ".")
 
 	items, _ := GetGroups()
 	for _, item := range items {
@@ -225,9 +243,7 @@ func StartGroup(group *OpcGroupItem) (err error) {
 func StopGroup(group *OpcGroupItem) (err error) {
 	// Make sure the group is running
 	if group.State == GroupStateStopped || group.State == GroupStateUnknown {
-		err = fmt.Errorf("Group not running, group: %s (id: %d)", group.Name, group.ID)
-		logger.Log("error", "OPC collection stop failed", err.Error())
-		return
+		return logger.Info("OPC group", "Group not running, group: %s (id: %d)", group.Name, group.ID)
 	}
 
 	// Stop collection go routine (unsafe)

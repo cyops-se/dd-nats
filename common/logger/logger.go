@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"dd-nats/common/db"
+	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"fmt"
 	"log"
@@ -10,14 +10,14 @@ import (
 
 func Log(category string, title string, msg string) string {
 	entry := &types.Log{Time: time.Now().UTC(), Category: category, Title: title, Description: msg}
-	if db.DB != nil {
-		db.DB.Create(&entry)
-		purge()
-	}
+	// if db.DB != nil {
+	// 	db.DB.Create(&entry)
+	// 	purge()
+	// }
 	text := fmt.Sprintf("%s: %s, %s", category, title, msg)
-	log.Printf(text)
+	log.Println(text)
 
-	// ddnats.Publish("system.log."+category, entry)
+	ddnats.Publish("system.log."+category, entry)
 	return text
 }
 
@@ -40,15 +40,15 @@ func Error(title string, format string, args ...interface{}) error {
 	return fmt.Errorf(text)
 }
 
-func purge() {
-	var result int64
-	if db.DB != nil {
-		db.DB.Model(&types.Log{}).Count(&result)
-		for result > 1000 {
-			var first types.Log
-			db.DB.First(&first)
-			db.DB.Unscoped().Delete(&first)
-			result--
-		}
-	}
-}
+// func purge() {
+// 	var result int64
+// 	if db.DB != nil {
+// 		db.DB.Model(&types.Log{}).Count(&result)
+// 		for result > 1000 {
+// 			var first types.Log
+// 			db.DB.First(&first)
+// 			db.DB.Unscoped().Delete(&first)
+// 			result--
+// 		}
+// 	}
+// }

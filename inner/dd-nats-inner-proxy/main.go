@@ -2,14 +2,12 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -21,42 +19,39 @@ var udpconn net.Conn
 var packet []byte
 
 func main() {
-	svcName := "dd-nats-inner-proxy"
-	if err := connectUDP(); err != nil {
+	if svc := ddsvc.InitService("dd-nats-inner-proxy"); svc != nil {
+		svc.RunService(runService)
+	}
+
+	log.Printf("Exiting ...")
+}
+
+func runService(svc *ddsvc.DdUsvc) {
+
+	host := svc.Get("proxy-ip", "192.168.1.84")
+	port := 4359
+	if err := connectUDP(host, port); err != nil {
 		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
 	}
 
 	udpconn.SetWriteDeadline(time.Time{})
 
-	nc, err := ddnats.Connect(nats.DefaultURL)
-	if err != nil {
-		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-		return
-	}
-
 	// Set up UDP sender
 	go sendUDP()
 
 	// Set up subscription wildcard for messages that should be forwarded to the outer proxy
-	nc.Subscribe("forward.>", callbackHandler)
+	ddnats.Subscribe("forward.>", callbackHandler)
 
-	// Set up subscription for system messages that should be forwarded to the outer proxy
-	nc.Subscribe("system.>", callbackHandler)
-
-	// Set up heartbeat
-	go ddnats.SendHeartbeat(svcName)
+	// Set up subscription for system hearbeat messages that should be forwarded to the outer proxy
+	ddnats.Subscribe("system.heartbeat", callbackHandler)
 
 	// Sleep until interrupted
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
-
-	log.Printf("Exiting ...")
+	select {}
 }
 
-func connectUDP() (err error) {
-	target := fmt.Sprintf("%s:%d", "localhost", 4359)
+func connectUDP(host string, port int) (err error) {
+	target := fmt.Sprintf("%s:%d", host, port)
 	udpconn, err = net.Dial("udp", target)
 	return err
 }
@@ -81,7 +76,7 @@ func sendUDP() {
 		binary.LittleEndian.PutUint32(packet[12:], uint32(len(sdata)))
 		binary.LittleEndian.PutUint32(packet[16:], uint32(len(msg.Data)))
 		copy(packet[20:], sdata)
-		udpconn.Write(packet)
+		udpconn.Write(packet[:len(sdata)+20])
 		counter++
 		totpkts++
 
@@ -96,7 +91,7 @@ func sendUDP() {
 			binary.LittleEndian.PutUint32(packet, uint32(counter))
 			binary.LittleEndian.PutUint32(packet[4:], uint32(packetsize))
 			copy(packet[8:], msg.Data[index:packetsize+index])
-			udpconn.Write(packet)
+			udpconn.Write(packet[:packetsize+8])
 			counter++
 			totpkts++
 

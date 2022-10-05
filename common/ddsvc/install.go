@@ -8,10 +8,7 @@
 package ddsvc
 
 import (
-	"dd-nats/common/types"
-	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -93,28 +90,4 @@ func removeService(name string) error {
 		return fmt.Errorf("RemoveEventLogSource() failed: %s", err)
 	}
 	return nil
-}
-
-func ProcessArgs(svcName string) *types.Context {
-	ctx := &types.Context{}
-	flag.StringVar(&ctx.Cmd, "cmd", "debug", "Windows service command (try 'usage' for more info)")
-	flag.StringVar(&ctx.Wdir, "workdir", ".", "Sets the working directory for the process")
-	flag.BoolVar(&ctx.Trace, "trace", false, "Prints traces from the application to the console")
-	flag.BoolVar(&ctx.Version, "v", false, "Prints the commit hash and exits")
-	flag.StringVar(&ctx.Name, "name", svcName, "Sets the name of the service")
-	flag.Parse()
-
-	if ctx.Cmd == "install" {
-		if err := installService(svcName, "from cyops-se"); err != nil {
-			log.Fatalf("failed to %s %s: %v", ctx.Cmd, svcName, err)
-		}
-		return nil
-	} else if ctx.Cmd == "remove" {
-		if err := removeService(svcName); err != nil {
-			log.Fatalf("failed to %s %s: %v", ctx.Cmd, svcName, err)
-		}
-		return nil
-	}
-
-	return ctx
 }

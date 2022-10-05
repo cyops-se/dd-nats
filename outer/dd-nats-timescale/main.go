@@ -1,7 +1,6 @@
 package main
 
 import (
-	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
@@ -15,33 +14,16 @@ import (
 var emitter TimescaleEmitter
 
 func main() {
-	svcName := "dd-nats-timescale"
-	_, err := ddnats.Connect(nats.DefaultURL)
-	if err != nil {
-		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-		return
+	if svc := ddsvc.InitService("dd-nats-timescale"); svc != nil {
+		svc.RunService(runEngine)
 	}
-
-	if ctx := ddsvc.ProcessArgs(svcName); ctx == nil {
-		return
-	} else {
-		if err := db.ConnectDatabase(*ctx, svcName+".db"); err != nil {
-			logger.Error("Local database", "Failed to connect to local database, error: %s", err.Error())
-			return
-		}
-	}
-
-	db.ConfigureTypes(db.DB, &types.Log{}, &types.KeyValuePair{})
-
-	go ddnats.SendHeartbeat(svcName)
-	ddsvc.RunService(svcName, runEngine)
 
 	log.Printf("Exiting ...")
 }
 
-func runEngine() {
+func runEngine(svc *ddsvc.DdUsvc) {
 	logger.Info("Microservices", "Timescale microservice running")
-	emitter.Host = "192.168.0.174"
+	emitter.Host = "localhost"
 	emitter.Database = "postgres"
 	emitter.Port = 5432
 	emitter.User = "postgres"
@@ -59,5 +41,7 @@ func processDataHandler(nmsg *nats.Msg) {
 		for _, dp := range msg.Points {
 			emitter.ProcessMessage(dp)
 		}
+	} else {
+		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
 	}
 }

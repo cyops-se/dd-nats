@@ -3,6 +3,7 @@ package routes
 import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-opcda/app"
@@ -53,7 +54,7 @@ func getOpcGroupById(nmsg *nats.Msg) {
 }
 
 func addOpcGroups(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -69,7 +70,7 @@ func addOpcGroups(nmsg *nats.Msg) {
 }
 
 func updateOpcGroups(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -100,12 +101,16 @@ func updateOpcGroups(nmsg *nats.Msg) {
 }
 
 func deleteOpcGroups(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
+		for _, g := range items.Items {
+			app.StopGroup(&g)
+		}
+
 		if err = db.DB.Delete(&items.Items).Error; err != nil {
 			response.Success = false
 			response.StatusMessage = err.Error()
@@ -116,7 +121,7 @@ func deleteOpcGroups(nmsg *nats.Msg) {
 }
 
 func deleteAllOpcGroups(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 	var items []app.OpcTagItem
 	if err := db.DB.Delete(&items, "1 = 1").Error; err != nil {
 		response.Success = false
@@ -126,7 +131,7 @@ func deleteAllOpcGroups(nmsg *nats.Msg) {
 }
 
 func startOpcGroup(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 
 	var intmsg types.IntMessage
 	var group app.OpcGroupItem
@@ -146,7 +151,7 @@ func startOpcGroup(nmsg *nats.Msg) {
 	ddnats.Respond(nmsg, response)
 }
 func stopOpcGroup(nmsg *nats.Msg) {
-	response := messages.StatusResponse{Success: true}
+	response := ddsvc.StatusResponse{Success: true}
 
 	var intmsg types.IntMessage
 	var group app.OpcGroupItem

@@ -1,6 +1,9 @@
 package messages
 
-import "dd-nats/inner/dd-nats-opcda/app"
+import (
+	"dd-nats/common/ddsvc"
+	"dd-nats/inner/dd-nats-opcda/app"
+)
 
 // Common
 
@@ -28,7 +31,7 @@ type GetOPCBranches struct {
 
 // Responses
 type BrowserPosition struct {
-	StatusResponse
+	ddsvc.StatusResponse
 	ServerId int      `json:"serverid"`
 	Position string   `json:"position"`
 	Branches []string `json:"branches"`
@@ -36,16 +39,16 @@ type BrowserPosition struct {
 }
 
 type OpcTagItemResponse struct {
-	StatusResponse
+	ddsvc.StatusResponse
 	Items []*app.OpcTagItem `json:"items"`
 }
 
 type OpcGroupItemResponse struct {
-	StatusResponse
+	ddsvc.StatusResponse
 	Item app.OpcGroupItem `json:"item"`
 }
 
 type OpcGroupItemsResponse struct {
-	StatusResponse
+	ddsvc.StatusResponse
 	Items []*app.OpcGroupItem `json:"items"`
 }

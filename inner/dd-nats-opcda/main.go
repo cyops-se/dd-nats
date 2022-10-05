@@ -1,7 +1,6 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
 	"dd-nats/inner/dd-nats-opcda/app"
 	"dd-nats/inner/dd-nats-opcda/routes"
@@ -17,23 +16,34 @@ var udpconn net.Conn
 var packet []byte
 
 func main() {
-	svcName := "dd-nats-opcda"
-	_, err := ddnats.Connect(nats.DefaultURL)
-	if err != nil {
-		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-		return
-	}
+	svc := ddsvc.InitService("dd-nats-opcda")
 
-	ctx := ddsvc.ProcessArgs(svcName)
-	if ctx == nil {
-		return
-	}
-
-	if app.Init(ctx) {
+	if app.Init(svc) {
 		routes.RegisterRoutes()
-		go ddnats.SendHeartbeat(ctx.Name)
-		ddsvc.RunService(ctx.Name, app.RunApp)
+		svc.RunService(app.RunApp)
 	}
 
 	log.Printf("Exiting ...")
 }
+
+// func main() {
+// 	svcName := "dd-nats-opcda"
+// 	_, err := ddnats.Connect(nats.DefaultURL)
+// 	if err != nil {
+// 		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
+// 		return
+// 	}
+
+// 	ctx := ddsvc.ProcessArgs(svcName)
+// 	if ctx == nil {
+// 		return
+// 	}
+
+// 	if app.Init(ctx) {
+// 		routes.RegisterRoutes()
+// 		go ddnats.SendHeartbeat(ctx.Name)
+// 		ddsvc.RunService(ctx.Name, app.RunApp)
+// 	}
+
+// 	log.Printf("Exiting ...")
+// }

@@ -21,7 +21,7 @@ func Connect(url string) (*nats.Conn, error) {
 		nc, err = nats.Connect(url)
 	}
 
-	log.Printf("Connected ...")
+	log.Printf("Connected to %s ...", url)
 	lnc = nc
 	return nc, err
 }

@@ -43,27 +43,32 @@ type transferInfo struct {
 var register map[string]*transferInfo
 
 func main() {
-	svcName := "dd-nats-file-outer"
-	nc, err = ddnats.Connect(nats.DefaultURL)
-	if err != nil {
-		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-		return
+	if svc := ddsvc.InitService("dd-nats-file-outer"); svc != nil {
+		register = make(map[string]*transferInfo)
+		svc.RunService(runEngine)
 	}
-
-	c := ddsvc.ProcessArgs(svcName)
-	if c == nil {
-		return
-	}
-
-	register = make(map[string]*transferInfo)
-
-	go ddnats.SendHeartbeat(c.Name)
-	ddsvc.RunService(c.Name, runEngine)
 
 	log.Printf("Exiting ...")
+
+	// svcName := "dd-nats-file-outer"
+	// nc, err = ddnats.Connect(nats.DefaultURL)
+	// if err != nil {
+	// 	log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
+	// 	return
+	// }
+
+	// c := ddsvc.ProcessArgs(svcName)
+	// if c == nil {
+	// 	return
+	// }
+
+	// go ddnats.SendHeartbeat(c.Name)
+	// ddsvc.RunService(c.Name, runEngine)
+
+	// log.Printf("Exiting ...")
 }
 
-func runEngine() {
+func runEngine(svc *ddsvc.DdUsvc) {
 	log.Println("Engine running ...")
 
 	// Listen for incoming files
