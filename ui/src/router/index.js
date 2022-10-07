@@ -33,15 +33,22 @@ const router = new Router({
       route('inner/modbus/ModbusSlaves', null, 'pages/modbus/slaves'),
       route('inner/modbus/DataPoints', null, 'pages/modbus/datapoints'),
       route('inner/modbus/Settings', null, 'pages/modbus/settings'),
-      route('inner/filetransfer/File Transfer', null, 'pages/file/transfer'),
-      route('inner/filetransfer/Settings', null, 'pages/file/settings'),
-      route('inner/proxy/Settings', null, 'pages/proxy/settings'),
+      route('inner/filetransfer/File Transfer', null, 'pages/innerfile/transfer'),
+      route('inner/filetransfer/Settings', null, 'pages/innerfile/settings'),
+      route('inner/proxy/Settings', null, 'pages/innerproxy/settings'),
       route('History', null, 'pages/process/cache'),
+
+      // Outer views
+      route('outer/proxy/Settings', null, 'pages/outerproxy/settings'),
+      route('outer/timescale/Meta', null, 'pages/timescale/meta'),
+      route('outer/timescale/Settings', null, 'pages/timescale/settings'),
+      route('outer/filter/FilteredPoints', null, 'pages/outerfilter/filteredpoints'),
+      route('outer/filter/Settings', null, 'pages/outerfilter/settings'),
 
       // General
       route('System Settings', null, 'pages/systemsettings'),
 
-      // Tables
+      // Common
       route('logs/Logs', null, 'pages/logs/all'),
       route('logs/InfoLogs', null, 'pages/logs/info'),
       route('logs/ErrorLogs', null, 'pages/logs/errors'),

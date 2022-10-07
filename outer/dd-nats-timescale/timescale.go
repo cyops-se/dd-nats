@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/nats-io/nats.go"
 )
 
 type TimescaleEmitter struct {
@@ -44,9 +46,18 @@ func (emitter *TimescaleEmitter) InitEmitter() error {
 
 	emitter.messages = make(chan types.DataPoint, 2000)
 	go emitter.processMessages()
-	go emitter.syncMeta()
+	// go emitter.syncMeta()
 
 	return nil
+}
+
+func (emitter *TimescaleEmitter) ProcessDataPointHandler(nmsg *nats.Msg) {
+	var dp types.DataPoint
+	if err := json.Unmarshal(nmsg.Data, &dp); err == nil {
+		emitter.ProcessMessage(dp)
+	} else {
+		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
+	}
 }
 
 func (emitter *TimescaleEmitter) ProcessMessage(dp types.DataPoint) {
@@ -175,33 +186,4 @@ func (emitter *TimescaleEmitter) insertBatch() error {
 	}
 
 	return nil
-}
-
-func (emitter *TimescaleEmitter) syncMeta() {
-	ticker := time.NewTicker(30 * time.Second)
-	for {
-		<-ticker.C
-		// var metaitems []types.DataPointMeta
-		// if err := db.DB.Find(&metaitems).Error; err != nil {
-		// 	fmt.Println("TIMESCALE failed to get meta items,", err.Error())
-		// 	continue
-		// }
-
-		// for _, dp := range metaitems {
-		// 	var id int
-		// 	if emitter.rowExists("select name from measurements.tags where name=$1", dp.Name) == false {
-		// 		if err := TimescaleDBConn.QueryRow(context.Background(), "insert into measurements.tags (name,unit,min,max,description) values ($1,$2,$3,$4,$5) returning tag_id",
-		// 			dp.Name, dp.EngUnit, dp.MinValue, dp.MaxValue, dp.Description).Scan(&id); err != nil {
-		// 			log.Printf("TIMESCALE failed to insert, err: %s,", err.Error())
-		// 		}
-		// 	} else {
-		// 		_, err := TimescaleDBConn.Exec(context.Background(), "update measurements.tags set unit=$2,min=$3,max=$4,description=$5 where name=$1",
-		// 			dp.Name, dp.EngUnit, dp.MinValue, dp.MaxValue, dp.Description)
-
-		// 		if err != nil {
-		// 			log.Printf("TIMESCALE failed to update, err: %s", err.Error())
-		// 		}
-		// 	}
-		// }
-	}
 }

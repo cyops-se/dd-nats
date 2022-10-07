@@ -2,50 +2,41 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
+	"strconv"
 	"time"
-
-	"github.com/nats-io/nats.go"
 )
 
 var udpconn *net.UDPConn
 
 func main() {
-	svcName := "dd-nats-outer-proxy"
-	if err := listenUDP(); err != nil {
-		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
-		return
+	if svc := ddsvc.InitService("dd-nats-outer-proxy"); svc != nil {
+		svc.RunService(runEngine)
 	}
-
-	nc, err := ddnats.Connect(nats.DefaultURL)
-	if err != nil {
-		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-		return
-	}
-
-	// Set up heartbeat
-	go ddnats.SendHeartbeat(svcName)
-
-	// Start receiving UDP messages
-	go readUDP(nc)
-
-	// Sleep until interrupted
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
 
 	log.Printf("Exiting ...")
 }
 
-func listenUDP() (err error) {
+func runEngine(svc *ddsvc.DdUsvc) {
+	port, _ := strconv.Atoi(svc.Get("port", "4359"))
+	if err := listenUDP(port); err != nil {
+		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
+		return
+	}
+
+	prefix := svc.Get("prefix", "inner.")
+
+	// Start receiving UDP messages
+	go readUDP(prefix)
+}
+
+func listenUDP(port int) (err error) {
 	addr := net.UDPAddr{
-		Port: 4359,
+		Port: port,
 		IP:   net.ParseIP("0.0.0.0"),
 	}
 
@@ -58,7 +49,7 @@ func listenUDP() (err error) {
 	return nil
 }
 
-func readUDP(nc *nats.Conn) {
+func readUDP(prefix string) {
 	packetsize := 1200
 	packet := make([]byte, packetsize)
 	count := 0
@@ -117,7 +108,7 @@ func readUDP(nc *nats.Conn) {
 			index += uint32(size)
 		}
 
-		nc.Publish(subject, mdata)
+		ddnats.PublishData(prefix+subject, mdata)
 
 		count++
 		total += uint64(time.Now().UnixNano()) - uint64(start)
@@ -143,55 +134,6 @@ func parseMagic8Packet(packet []byte) (uint32, uint32, uint32, string, error) {
 	subject := string(packet[20 : 20+slen])
 
 	return counter, slen, dlen, subject, nil
-}
-
-func readUDP2(nc *nats.Conn) {
-
-	// Look for $MAGIC8$
-	magic8 := make([]byte, 8)
-
-	for {
-		n, _, err := udpconn.ReadFromUDP(magic8)
-		if n != 8 {
-			log.Printf("Failed to read MAGIC8, n: %d", n)
-			continue
-		}
-
-		if err != nil {
-			log.Printf("Failed to read MAGIC8, err: %s", err.Error())
-			continue
-		}
-
-		len, err := readHeader()
-		if err != nil {
-			continue
-		}
-
-		sdata := make([]byte, len)
-		n, _, err = udpconn.ReadFromUDP(sdata)
-		if err != nil {
-			log.Printf("Failed to read subject, err: %s", err.Error())
-			continue
-		}
-
-		subject := string(sdata)
-
-		len, err = readHeader()
-		if err != nil {
-			continue
-		}
-
-		mdata := make([]byte, len)
-		n, _, err = udpconn.ReadFromUDP(mdata)
-		if err != nil {
-			log.Printf("Failed to read message body, err: %s", err.Error())
-			continue
-		}
-
-		go nc.Publish(subject, mdata)
-		// go log.Printf("published subject: %s, data: %s", subject, string(mdata))
-	}
-
 }
 
 func readHeader() (uint32, error) {

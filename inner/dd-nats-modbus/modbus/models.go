@@ -22,7 +22,6 @@ type ModbusSlaveItem struct {
 
 type ModbusItem struct {
 	types.Model
-	types.DataPointInfo
 	Name           string          `json:"name"`
 	Description    string          `json:"description"`
 	EngUnit        string          `json:"engunit"`

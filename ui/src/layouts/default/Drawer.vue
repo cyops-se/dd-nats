@@ -192,12 +192,70 @@
             {
               icon: 'mdi-transfer',
               text: 'Transfer status',
-              to: '/pages/file/transfer',
+              to: '/pages/innerfile/transfer',
             },
             {
               icon: 'mdi-cog',
               text: 'Settings',
-              to: '/pages/file/settings',
+              to: '/pages/innerfile/settings',
+            },
+          ],
+        },
+        {
+          icon: 'mdi-server',
+          text: 'Inner proxy',
+          usvc: 'ddnatsinnerproxy',
+          sublinks: [
+            {
+              icon: 'mdi-cog',
+              text: 'Settings',
+              to: '/pages/innerproxy/settings',
+            },
+          ],
+        },
+        {
+          icon: 'mdi-server',
+          text: 'Outer proxy',
+          usvc: 'ddnatsouterproxy',
+          sublinks: [
+            {
+              icon: 'mdi-cog',
+              text: 'Settings',
+              to: '/pages/outerproxy/settings',
+            },
+          ],
+        },
+        {
+          icon: 'mdi-server',
+          text: 'Timescale',
+          usvc: 'ddnatstimescale',
+          sublinks: [
+            {
+              icon: 'mdi-cog',
+              text: 'Meta',
+              to: '/pages/timescale/meta',
+            },
+            {
+              icon: 'mdi-cog',
+              text: 'Settings',
+              to: '/pages/timescale/settings',
+            },
+          ],
+        },
+        {
+          icon: 'mdi-tag',
+          text: 'Filter',
+          usvc: 'ddnatsprocessfilter',
+          sublinks: [
+            {
+              icon: 'mdi-cog',
+              text: 'Filtered points',
+              to: '/pages/outerfilter/filteredpoints',
+            },
+            {
+              icon: 'mdi-cog',
+              text: 'Settings',
+              to: '/pages/outerfilter/settings',
             },
           ],
         },
@@ -223,18 +281,6 @@
               icon: 'mdi-cog',
               text: 'Settings',
               to: '/pages/logs/settings',
-            },
-          ],
-        },
-        {
-          icon: 'mdi-server',
-          text: 'Proxy',
-          usvc: 'ddnatsinnerproxy',
-          sublinks: [
-            {
-              icon: 'mdi-cog',
-              text: 'Settings',
-              to: '/pages/proxy/settings',
             },
           ],
         },

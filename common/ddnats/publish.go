@@ -20,6 +20,10 @@ func Publish(subject string, response interface{}) error {
 	return lnc.Publish(subject, data)
 }
 
+func PublishData(subject string, data []byte) error {
+	return lnc.Publish(subject, data)
+}
+
 func PublishError(f string, a ...interface{}) error {
 	subject := "system.error"
 	response := fmt.Sprintf(f, a...)

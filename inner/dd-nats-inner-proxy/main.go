@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -40,11 +41,18 @@ func runService(svc *ddsvc.DdUsvc) {
 	// Set up UDP sender
 	go sendUDP()
 
-	// Set up subscription wildcard for messages that should be forwarded to the outer proxy
-	ddnats.Subscribe("forward.>", callbackHandler)
+	topicstr := svc.Get("topics", "process.>,file.>, system.log.>, system.heartbeat")
+	topics := strings.Split(topicstr, ",")
 
-	// Set up subscription for system hearbeat messages that should be forwarded to the outer proxy
-	ddnats.Subscribe("system.heartbeat", callbackHandler)
+	for _, topic := range topics {
+		ddnats.Subscribe(topic, callbackHandler)
+	}
+
+	// // Set up subscription wildcard for messages that should be forwarded to the outer proxy
+	// ddnats.Subscribe("forward.>", callbackHandler)
+
+	// // Set up subscription for system hearbeat messages that should be forwarded to the outer proxy
+	// ddnats.Subscribe("system.heartbeat", callbackHandler)
 
 	// Sleep until interrupted
 	select {}
@@ -69,7 +77,7 @@ func sendUDP() {
 
 	for {
 		msg := <-forwarder
-		sdata := []byte("inner." + msg.Subject)
+		sdata := []byte(msg.Subject)
 
 		copy(packet, []byte("$MAGIC8$"))
 		binary.LittleEndian.PutUint32(packet[8:], counter)

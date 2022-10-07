@@ -3,6 +3,7 @@ package main
 import (
 	"dd-nats/common/ddnats"
 	"flag"
+	"fmt"
 	"log"
 	"runtime"
 
@@ -11,9 +12,11 @@ import (
 
 func main() {
 	subject := flag.String("s", "forward.>", "The subject for which you want to sniff messsages")
+	port := flag.Int("p", 4222, "NATS server port on localhost to use, for example if you are running two instances")
 	flag.Parse()
 
-	nc, err := ddnats.Connect(nats.DefaultURL)
+	url := fmt.Sprintf("nats://localhost:%d", *port)
+	nc, err := ddnats.Connect(url)
 	if err != nil {
 		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
 		return

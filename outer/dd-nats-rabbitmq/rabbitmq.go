@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
+	"dd-nats/common/db"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 
+	"github.com/nats-io/nats.go"
 	"github.com/sirius1024/go-amqp-reconnect/rabbitmq"
 	"github.com/streadway/amqp"
 )
@@ -79,6 +82,13 @@ func (emitter *RabbitMQEmitter) InitEmitter() error {
 	return nil
 }
 
+func (emitter *RabbitMQEmitter) processDataPointHandler(nmsg *nats.Msg) {
+	var dp types.DataPoint
+	if err := json.Unmarshal(nmsg.Data, &dp); err == nil {
+		emitter.ProcessMessage(dp)
+	}
+}
+
 func (emitter *RabbitMQEmitter) ProcessMessage(dp types.DataPoint) {
 	if !emitter.initialized {
 		return
@@ -115,58 +125,59 @@ func (emitter *RabbitMQEmitter) processMessages() {
 }
 
 func (emitter *RabbitMQEmitter) syncMetaRabbit() {
-	// ticker := time.NewTicker(30 * time.Second)
-	// var prevmetaitems []types.DataPointMeta
-	// var dosend bool
-	// for {
-	// 	<-ticker.C
-	// 	var metaitems []types.DataPointMeta
-	// 	if err := db.DB.Find(&metaitems).Error; err != nil {
-	// 		fmt.Println("TIMESCALE failed to get meta items,", err.Error())
-	// 		continue
-	// 	}
+	ticker := time.NewTicker(30 * time.Second)
+	var prevmetaitems []types.DataPointMeta
+	var dosend bool
+	for {
+		<-ticker.C
+		// TODO: replace this with a call to timescale-meta service to get all meta data
+		var metaitems []types.DataPointMeta
+		if err := db.DB.Find(&metaitems).Error; err != nil {
+			fmt.Println("TIMESCALE failed to get meta items,", err.Error())
+			continue
+		}
 
-	// 	// Check individual items (discard items no longer in db)
-	// 	for _, dp := range metaitems {
-	// 		dosend = true
-	// 		for _, pdp := range prevmetaitems {
-	// 			if reflect.DeepEqual(dp, pdp) {
-	// 				dosend = false
-	// 				continue
-	// 			}
-	// 		}
+		// Check individual items (discard items no longer in db)
+		for _, dp := range metaitems {
+			dosend = true
+			for _, pdp := range prevmetaitems {
+				if reflect.DeepEqual(dp, pdp) {
+					dosend = false
+					continue
+				}
+			}
 
-	// 		if dosend {
-	// 			emitter.sendMetaRabbit(&dp)
-	// 		}
-	// 	}
+			if dosend {
+				emitter.sendMetaRabbit(&dp)
+			}
+		}
 
-	// 	prevmetaitems = metaitems
-	// }
+		prevmetaitems = metaitems
+	}
 }
 
-// func (emitter *RabbitMQEmitter) sendMetaRabbit(dp *types.DataPointMeta) {
-// 	msg := &RabbitMQMetaItem{}
-// 	msg.Signal = dp.Name
-// 	msg.Description = dp.Description
-// 	msg.Dimension = dp.EngUnit
-// 	msg.Max = dp.MaxValue
-// 	msg.Min = dp.MinValue
-// 	msg.Deadband = dp.IntegratingDeadband
+func (emitter *RabbitMQEmitter) sendMetaRabbit(dp *types.DataPointMeta) {
+	msg := &RabbitMQMetaItem{}
+	msg.Signal = dp.Name
+	msg.Description = dp.Description
+	msg.Dimension = dp.EngUnit
+	msg.Max = dp.MaxValue
+	msg.Min = dp.MinValue
+	msg.Deadband = dp.IntegratingDeadband
 
-// 	body, _ := json.Marshal(msg)
+	body, _ := json.Marshal(msg)
 
-// 	emitter.err = emitter.channel.Publish(
-// 		"",            // exchange
-// 		"me-metadata", // routing key
-// 		false,         // mandatory
-// 		false,         // immediate
-// 		amqp.Publishing{
-// 			ContentType: "text/json",
-// 			Body:        body,
-// 		})
+	emitter.err = emitter.channel.Publish(
+		"",            // exchange
+		"me-metadata", // routing key
+		false,         // mandatory
+		false,         // immediate
+		amqp.Publishing{
+			ContentType: "text/json",
+			Body:        body,
+		})
 
-// 	if emitter.err != nil {
-// 		logger.Log("error", "RabbitMQ emitter", fmt.Sprintf("Failed to publish meta message: %v", emitter.err.Error()))
-// 	}
-// }
+	if emitter.err != nil {
+		logger.Log("error", "RabbitMQ emitter", fmt.Sprintf("Failed to publish meta message: %v", emitter.err.Error()))
+	}
+}

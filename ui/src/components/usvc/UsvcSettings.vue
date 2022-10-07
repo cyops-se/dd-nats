@@ -134,7 +134,8 @@
             this.items = []
             const keys = Object.keys(response.data.items)
             keys.forEach(key => {
-              this.items.push({ key: key, value: response.data.items[key] })
+              var value = key !== 'password' ? response.data.items[key] : '******'
+              this.items.push({ key: key, value: value })
             })
           }).catch(response => {
             console.log('ERROR response: ' + response.message)
@@ -175,7 +176,10 @@
 
       save () {
         this.items[this.editedIndex] = this.editedItem
-        var items = this.items.reduce((a, v) => ({ [v.key]: v.value }), {})
+        var items = {}
+        // eslint-disable-next-line no-return-assign
+        this.items.forEach(o => items[o.key] = o.value)
+        if (items.password === '******') delete items.password
         var request = { subject: 'usvc.' + this.usvc + '.settings.set', payload: { items: items } }
         ApiService.post('nats/request', request)
           .then(response => {

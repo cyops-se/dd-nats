@@ -101,6 +101,10 @@ func RunWeb(args types.Context) {
 		NotifySubscribers(m.Subject, string(m.Data))
 	})
 
+	ddnats.Subscribe("process.>", func(m *nats.Msg) {
+		NotifySubscribers(m.Subject, string(m.Data))
+	})
+
 	ddnats.Subscribe("inner.system.>", func(m *nats.Msg) {
 		NotifySubscribers(m.Subject, string(m.Data))
 	})

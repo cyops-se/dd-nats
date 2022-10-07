@@ -132,11 +132,13 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 			msg.Points[b].Value = asFloat64(v.Value)
 			msg.Points[b].Quality = int(v.Quality)
 
+			ddnats.Publish("process.actual", msg.Points[b])
+
 			// Send batch when msg.Points is full (keep it small to avoid fragmentation)
 			if b == len(msg.Points)-1 {
-				if err := ddnats.Publish("forward.process", msg); err != nil {
-					log.Printf("Failed to publish sample message, error: %s", err.Error())
-				}
+				// if err := ddnats.Publish("process.message", msg); err != nil {
+				// 	log.Printf("Failed to publish sample message, error: %s", err.Error())
+				// }
 
 				b = 0
 				msg.Sequence++

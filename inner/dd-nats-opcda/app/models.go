@@ -26,7 +26,7 @@ type OpcGroupItem struct {
 
 type OpcTagItem struct {
 	types.Model
-	types.DataPointInfo
+	Name    string       `json:"name"`
 	Group   OpcGroupItem `json:"group"`
 	GroupID int          `json:"groupid"`
 }

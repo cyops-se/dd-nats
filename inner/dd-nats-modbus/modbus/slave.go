@@ -210,6 +210,8 @@ func (mc *modbusConnection) runSlaveWorker() {
 							msg.Points[n].Name = ds.items[n].Name
 							msg.Points[n].Value = value
 
+							ddnats.Publish("process.actual", msg.Points[n])
+
 							if TRACE {
 								log.Printf("ds: %d, name: %s, address: %d, raw value: %v, value: %f", dsno, item.Name, int(ds.start)+n, rawvalue, value)
 								log.Printf("msg.Time: %v, msg.Name: %s, msg.Value: %v, msg.Quality: %d",
@@ -218,7 +220,7 @@ func (mc *modbusConnection) runSlaveWorker() {
 						}
 					}
 
-					ddnats.Publish("forward.process", msg)
+					// ddnats.Publish("forward.process", msg)
 
 					mc.Slave.LastRun = time.Now().UTC().Format("2006-01-02 15:04:05")
 				}

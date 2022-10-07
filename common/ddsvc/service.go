@@ -4,6 +4,7 @@ import (
 	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path"
@@ -73,6 +74,7 @@ func (svc *DdUsvc) Get(name string, defaultvalue string) string {
 
 func (svc *DdUsvc) Set(name string, value string) {
 	svc.Settings[name] = value
+	svc.saveSettings()
 }
 
 // Internal service helpers
@@ -92,7 +94,9 @@ func (svc *DdUsvc) initSettings(ctx *types.Context) {
 func (svc *DdUsvc) saveSettings() error {
 	filename := path.Join(svc.Context.Wdir, svc.Name+"_settings.json")
 	if content, err := json.Marshal(svc.Settings); err == nil {
-		return os.WriteFile(filename, content, 0755)
+		err := os.WriteFile(filename, content, 0755)
+		ddnats.Publish(fmt.Sprintf("usvc.%s.event.settingschanged", strings.ReplaceAll(svc.Name, "-", "")), svc.Name)
+		return err
 	} else {
 		return err
 	}
