@@ -21,6 +21,7 @@ type allMetaResponse struct {
 func registerRoutes() {
 	ddnats.Subscribe("usvc.timescale.meta.getall", getAllMeta)
 	ddnats.Subscribe("usvc.timescale.meta.updateall", updateAllMeta)
+	ddnats.Subscribe("usvc.timescale.meta.delete", deleteMeta)
 }
 
 func getAllMeta(nmsg *nats.Msg) {
@@ -37,7 +38,7 @@ func getAllMeta(nmsg *nats.Msg) {
 }
 
 func updateAllMeta(nmsg *nats.Msg) {
-	response := &ddsvc.StatusResponse{Success: false, StatusMessage: "Not yet implemented"}
+	response := &ddsvc.StatusResponse{Success: true}
 
 	var request updateMetaRequest
 	if err := json.Unmarshal(nmsg.Data, &request); err != nil {
@@ -45,6 +46,23 @@ func updateAllMeta(nmsg *nats.Msg) {
 		response.StatusMessage = err.Error()
 	} else {
 		if err = updateAllMetaInDatabase(request.Items); err != nil {
+			response.Success = false
+			response.StatusMessage = err.Error()
+		}
+	}
+
+	ddnats.Respond(nmsg, response)
+}
+
+func deleteMeta(nmsg *nats.Msg) {
+	response := &ddsvc.StatusResponse{Success: true}
+
+	var request updateMetaRequest
+	if err := json.Unmarshal(nmsg.Data, &request); err != nil {
+		response.Success = false
+		response.StatusMessage = err.Error()
+	} else {
+		if err = deleteMetaInDatabase(request.Items); err != nil {
 			response.Success = false
 			response.StatusMessage = err.Error()
 		}

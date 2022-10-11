@@ -28,9 +28,9 @@ func AddModbusDataItems(items ModbusItems) error {
 func UpdateModbusItem(item *ModbusItem) error {
 	err := db.DB.Save(&item).Error
 	if err == nil {
-		for _, dp := range datapoints {
+		for i, dp := range datapoints {
 			if item.ID == dp.ID {
-				dp = item
+				datapoints[i] = item
 				break
 			}
 		}
@@ -68,7 +68,7 @@ func DeleteModbusItems(items ModbusItems) error {
 func BulkChangesModbusItems(items []*BulkChangeModbusItem) error {
 	var anyerr error
 	for _, posteditem := range items {
-		slaveid, err := checkSlaveIP(posteditem.IPAddress)
+		slaveid, err := checkSlaveIP(posteditem)
 		if err == nil {
 			if posteditem.ModbusSlaveID == 0 {
 				posteditem.ModbusSlaveID = slaveid

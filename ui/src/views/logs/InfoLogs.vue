@@ -26,7 +26,8 @@
       </v-card-title>
       <log-list
         method="getcategory"
-        payload='{"category": "info"}'
+        payload="{&quot;category&quot;: &quot;info&quot;}"
+        :search="search"
       />
     </v-card>
   </v-container>

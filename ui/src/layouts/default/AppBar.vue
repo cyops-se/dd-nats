@@ -24,10 +24,11 @@
     <v-spacer />
 
     <usvc-mini-card
+      v-if="side === 'inner'"
       usvc="ddnatsinnerproxy"
     />
     <usvc-mini-card
-      v-if="outer"
+      v-if="side === 'outer'"
       usvc="ddnatsouterproxy"
     />
 
@@ -41,7 +42,6 @@
   // Utilities
   import { get, sync } from 'vuex-pathify'
   import UsvcMiniCard from '../../components/usvc/UsvcMiniCard.vue'
-  import WebsocketService from '@/services/websocket.service'
 
   export default {
     name: 'DefaultBar',
@@ -67,14 +67,15 @@
         'drawer',
         'mini',
       ]),
+      ...sync('usvc', [
+        'services',
+        'lastseen',
+        'side',
+      ]),
       name: get('route/name'),
     },
 
     created () {
-      WebsocketService.topic('system.heartbeat', this, function (topic, msg, t) {
-        var appname = msg.appname.replaceAll('-', '')
-        if (appname === 'ddnatsouterproxy') t.outer = true
-      })
     },
   }
 </script>

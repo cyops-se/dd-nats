@@ -27,6 +27,7 @@
       <log-list
         method="getall"
         payload=""
+        :search="search"
       />
     </v-card>
   </v-container>

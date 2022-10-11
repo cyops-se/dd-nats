@@ -17,3 +17,4 @@ outgoing
 incoming
 *.db
 /svcs/dd-ui/web/static
+*.json

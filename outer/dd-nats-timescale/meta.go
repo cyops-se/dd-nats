@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"fmt"
 	"log"
@@ -57,34 +58,25 @@ func updateAllMetaInDatabase(items types.DataPointMetas) error {
 		}
 	}
 
+	ddnats.Event("timescale.metaupdated", nil)
 	return nil
 }
 
-// func (emitter *TimescaleEmitter) syncMeta() {
-// 	ticker := time.NewTicker(30 * time.Second)
-// 	for {
-// 		<-ticker.C
-// 		var metaitems []types.DataPointMeta
-// 		if err := db.DB.Find(&metaitems).Error; err != nil {
-// 			fmt.Println("TIMESCALE failed to get meta items,", err.Error())
-// 			continue
-// 		}
+func deleteMetaInDatabase(items types.DataPointMetas) error {
+	if TimescaleDBConn == nil {
+		return fmt.Errorf("no Timescale database connection available")
+	}
 
-// 		for _, dp := range metaitems {
-// 			var id int
-// 			if emitter.rowExists("select name from measurements.tags where name=$1", dp.Name) == false {
-// 				if err := TimescaleDBConn.QueryRow(context.Background(), "insert into measurements.tags (name,unit,min,max,description) values ($1,$2,$3,$4,$5) returning tag_id",
-// 					dp.Name, dp.EngUnit, dp.MinValue, dp.MaxValue, dp.Description).Scan(&id); err != nil {
-// 					log.Printf("TIMESCALE failed to insert, err: %s,", err.Error())
-// 				}
-// 			} else {
-// 				_, err := TimescaleDBConn.Exec(context.Background(), "update measurements.tags set unit=$2,min=$3,max=$4,description=$5 where name=$1",
-// 					dp.Name, dp.EngUnit, dp.MinValue, dp.MaxValue, dp.Description)
+	for _, dp := range items {
+		if emitter.rowExists("select name from measurements.tags where name=$1", dp.Name) == true {
+			_, err := TimescaleDBConn.Exec(context.Background(), "delete from measurements.tags where name=$1", dp.Name)
 
-// 				if err != nil {
-// 					log.Printf("TIMESCALE failed to update, err: %s", err.Error())
-// 				}
-// 			}
-// 		}
-// 	}
-// }
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	ddnats.Event("timescale.metaupdated", nil)
+	return nil
+}

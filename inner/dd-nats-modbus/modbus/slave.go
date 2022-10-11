@@ -269,19 +269,23 @@ func getSlaveByIP(ip string) *ModbusSlaveItem {
 	return nil
 }
 
-func checkSlaveIP(ip string) (uint, error) {
-	if strings.TrimSpace(ip) == "" {
+func checkSlaveIP(posteditem *BulkChangeModbusItem) (uint, error) {
+	if posteditem.ID > 0 {
+		return posteditem.ID, nil
+	}
+
+	if strings.TrimSpace(posteditem.IPAddress) == "" {
 		return 0, logger.Error("Modbus service", "Failed to check empty modbus slave IP")
 	}
 
 	var item ModbusSlaveItem
-	err := db.DB.First(&item, "ip_address = ?", ip).Error
+	err := db.DB.First(&item, "ip_address = ?", posteditem.ModbusSlave.IPAddress).Error
 	if err != nil {
-		item.IPAddress = ip
-		item.Name = ip
+		item.IPAddress = posteditem.IPAddress
+		item.Name = posteditem.IPAddress
 		AddModbusSlave(&item)
-		log.Println("Creating ip:", ip)
-		return checkSlaveIP(ip)
+		log.Println("Creating ip:", posteditem.IPAddress)
+		return checkSlaveIP(posteditem)
 	}
 	return item.ID, err
 }

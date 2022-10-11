@@ -7,17 +7,19 @@
       @filesUploaded="processUpload($event)"
     />
     <v-data-table
+      v-model="selected"
       :headers="headers"
       :items="items"
       :search="search"
-      sort-by.sync="sortby"
+      item-key="datapoint.n"
+      show-select
       class="elevation-1"
     >
       <template v-slot:top>
         <v-toolbar
           flat
         >
-          <v-toolbar-title>Tags</v-toolbar-title>
+          <v-toolbar-title>Data points</v-toolbar-title>
           <v-divider
             class="mx-4"
             inset
@@ -38,6 +40,7 @@
                   <v-row>
                     <v-col cols="12">
                       <v-text-field
+                        v-if="editedIndex != -2"
                         v-model="editedItem.datapoint.n"
                         label="Name"
                         readonly
@@ -46,7 +49,7 @@
                     <v-col cols="12">
                       <v-combobox
                         v-model="editedItem.type"
-                        :items="availableTypeNames"
+                        :items="availableTypes"
                         label="Filter types"
                         outlined
                         hide-details
@@ -103,12 +106,20 @@
             hide-details
           />
           <v-btn
+            color="secondary"
+            class="ml-2"
+            :disabled="selected.length === 0"
+            @click="editSelectedItems"
+          >
+            Edit selected
+          </v-btn>
+          <!-- v-btn
             color="primary"
             dark
             class="ml-3"
             @click="exportCSV"
           >
-            Export to CSV
+            Export
           </v-btn>
           <v-btn
             color="primary"
@@ -116,7 +127,7 @@
             class="ml-3"
             @click="uploadDialog = !uploadDialog"
           >
-            Import from CSV
+            Import
           </v-btn>
           <v-btn
             color="success"
@@ -126,15 +137,15 @@
             @click="saveChanges"
           >
             Save changes
-          </v-btn>
-          <v-btn
+          </v-btn -->
+          <!-- v-btn
             color="primary"
             dark
             class="ml-3"
             @click="refresh"
           >
             Refresh
-          </v-btn>
+          </v-btn -->
         </v-toolbar>
       </template>
       <template
@@ -174,26 +185,35 @@
       loading: false,
       headers: [
         { text: 'Name', value: 'datapoint.n', width: '60%' },
-        { text: 'Actual Value', value: 'datapoint.v', width: '10%' },
+        { text: 'Actual value', value: 'datapoint.v', width: '100px' },
+        { text: 'Min', value: 'min', width: '50px' },
+        { text: 'Max', value: 'max', width: '50px' },
         { text: 'Type', value: 'filtertype', width: '50px' },
-        { text: 'Deadband', value: 'deadband', width: '150px' },
-        { text: 'Threshold', value: 'threshold', width: '150px' },
-        { text: 'Integrator', value: 'integrator', width: '150px' },
-        { text: 'Previous Value', value: 'previousvalue', width: '10%' },
+        { text: 'Dead- band', value: 'deadband', width: '50px' },
+        { text: 'Thres- hold', value: 'threshold', width: '50px' },
+        { text: 'Inte-grator', value: 'integrator', width: '50px' },
+        { text: 'Inter-val', value: 'interval', width: '50px' },
+        { text: 'Prev value', value: 'previousvalue', width: '50px' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
       ],
       items: [],
       editedIndex: -1,
       editedItem: {
-        datapoint: { n: '' },
+        datapoint: { n: '', v: 0.0 },
         type: { value: 0 },
+        deadband: 0.0,
+        integrator: 0.0,
+        previousvalue: 0.0,
       },
       defaultItem: {
-        datapoint: { n: '' },
-        type: { value: 0 },
+        datapoint: { n: '', v: 0.0 },
+        type: { text: 'Passthrough', value: 0 },
+        deadband: 0.0,
+        integrator: 0.0,
+        previousvalue: 0.0,
       },
-      availableTypeNames: [{ text: 'Passthrough', value: 0 }, { text: 'Interval', value: 1 }, { text: 'Deadband', value: 2 }],
-      sortyby: 'datapoint.n',
+      availableTypes: [{ text: 'Passthrough', value: 0 }, { text: 'Interval', value: 1 }, { text: 'Deadband', value: 2 }],
+      selected: [],
     }),
 
     created () {
@@ -218,16 +238,23 @@
         ApiService.post('nats/request', request)
           .then(response => {
             this.items = response.data.items
-            this.items.forEach(i => { i.type = this.availableTypeNames[i.filtertype] })
+            this.items.forEach(i => { i.type = this.availableTypes[i.filtertype] })
           }).catch(response => {
             this.$notification.error('Failed to get tags: ' + response.data.statusmsg)
           })
       },
 
       editItem (item) {
+        console.log('editing item: ' + JSON.stringify(item))
         this.editedIndex = this.items.indexOf(item)
         this.editedItem = Object.assign({}, item)
         console.log('item being edited: ' + JSON.stringify(this.editedItem))
+        this.dialog = true
+      },
+
+      editSelectedItems () {
+        this.editedIndex = -2
+        this.editedItem = Object.assign({}, this.defaultItem)
         this.dialog = true
       },
 
@@ -258,23 +285,48 @@
       save () {
         this.editedItem.filtertype = parseInt(this.editedItem.type.value)
         this.editedItem.deadband = parseFloat(this.editedItem.deadband)
-        this.editedItem.min = 0
-        this.editedItem.max = 5
-        this.editedItem.datapoint.v = 0.0
-        this.editedItem.integrator = 0.0
-        this.editedItem.previousvalue = 0.0
-        var request = { subject: 'usvc.process.filter.setfilter', payload: this.editedItem }
-        ApiService.post('nats/request', request)
-          .then(response => {
-            if (response.data.success) {
-              this.refresh()
-              this.$notification.success('Tag saved')
-            } else {
-              this.$notification.error('Failed to save tag: ' + response.data.statusmsg)
-            }
-          }).catch(response => {
-            this.$notification.error('Failed to save tag: ' + response.message)
-          })
+        this.editedItem.integrator = parseFloat(this.editedItem.integrator)
+        this.editedItem.previousvalue = parseFloat(this.editedItem.previousvalue)
+        this.editedItem.datapoint.v = parseFloat(this.editedItem.datapoint.v)
+        if (this.editedIndex > -1) {
+          var r = { subject: 'usvc.process.filter.setfilter', payload: { items: [this.editedItem] } }
+          ApiService.post('nats/request', r)
+            .then(response => {
+              if (response.data.success) {
+                this.editedItem = this.defaultItem
+                this.refresh()
+                this.$notification.success('Tag saved')
+              } else {
+                this.$notification.error('Failed to save tag: ' + response.data.statusmsg)
+              }
+            }).catch(response => {
+              this.$notification.error('Failed to save tag: ' + response.message)
+            })
+        } else if (this.selected.length > 0) {
+          for (var i = 0; i < this.selected.length; i++) {
+            this.selected[i].filtertype = parseInt(this.editedItem.type.value)
+            this.selected[i].deadband = parseFloat(this.editedItem.deadband)
+            this.selected[i].interval = parseFloat(this.editedItem.interval)
+            this.selected[i].integrator = parseFloat(this.selected[i].integrator)
+            this.selected[i].previousvalue = parseFloat(this.selected[i].previousvalue)
+            this.selected[i].datapoint.v = parseFloat(this.selected[i].datapoint.v)
+          }
+
+          r = { subject: 'usvc.process.filter.setfilter', payload: { items: this.selected } }
+          ApiService.post('nats/request', r)
+            .then(response => {
+              if (response.data.success) {
+                this.selected = []
+                this.editedItem = this.defaultItem
+                this.refresh()
+                this.$notification.success('Filter meta data saved')
+              } else {
+                this.$notification.error('Failed to save tag: ' + response.data.statusmsg)
+              }
+            }).catch(response => {
+              this.$notification.error('Failed to save tag: ' + response.message)
+            })
+        }
         this.close()
       },
 
@@ -370,12 +422,7 @@
         // keep changed items in the table
         this.items = this.items.filter(item => (item?.changed === true || item?.new === true) || false)
 
-        if (this.items.length === 0) {
-          this.$notification.error('No new or changed items identified')
-          this.refresh()
-        } else {
-          this.saveDisabled = false
-        }
+        this.saveDisabled = this.items.length
       },
 
       saveChanges () {

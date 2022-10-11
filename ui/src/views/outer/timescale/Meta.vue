@@ -47,14 +47,19 @@
                   </v-row>
                   <v-row>
                     <v-col
-                      cols="12"
+                      cols="6"
                     >
-                      <v-combobox
-                        v-model="editedItem.slaveid"
-                        :items="availableSlaves"
-                        item-text="name"
-                        label="slave"
-                        outlined
+                      <v-text-field
+                        v-model.number="editedItem.min"
+                        label="Min"
+                      />
+                    </v-col>
+                    <v-col
+                      cols="6"
+                    >
+                      <v-text-field
+                        v-model.number="editedItem.max"
+                        label="Max"
                       />
                     </v-col>
                   </v-row>
@@ -104,7 +109,7 @@
             class="ml-3"
             @click="exportCSV"
           >
-            Export to CSV
+            Export
           </v-btn>
           <v-btn
             color="primary"
@@ -112,7 +117,7 @@
             class="ml-3"
             @click="uploadDialog = !uploadDialog"
           >
-            Import from CSV
+            Import
           </v-btn>
           <v-btn
             color="success"
@@ -143,9 +148,7 @@
 </template>
 
 <script>
-  import Vue from 'vue'
   import ApiService from '@/services/api.service'
-  import WebsocketService from '@/services/websocket.service'
   export default {
     name: 'Meta',
 
@@ -155,30 +158,24 @@
       uploadDialog: false,
       saveDisabled: true,
       search: '',
-      loading: false,
       headers: [
-        { text: 'Name', value: 'name', width: '20%' },
-        { text: 'Description', value: 'description', width: '30%' },
-        { text: 'Location', value: 'location', width: '90px' },
-        { text: 'Type', value: 'type', width: '90px' },
-        { text: 'Unit', value: 'unit', width: '90px' },
+        { text: 'Name', value: 'name', width: '40%' },
+        { text: 'Description', value: 'description', width: '50%' },
+        { text: 'Unit', value: 'engunit', width: '90px' },
         { text: 'Min', value: 'min', width: '90px' },
         { text: 'Max', value: 'max', width: '90px' },
+        { text: '', value: 'changed', width: '90px' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
       ],
       items: [],
       editedIndex: -1,
       editedItem: {
-        fullname: '',
-        email: '',
+        tag: '',
       },
       defaultItem: {
-        fullname: '',
-        email: '',
+        tag: '',
       },
-      availableSlaves: [],
-      slaves: [],
-      slavesTable: {},
+      selected: [],
     }),
 
     created () {
@@ -189,8 +186,6 @@
       initialize () {},
 
       refresh () {
-        this.loading = true
-
         var request = { subject: 'usvc.timescale.meta.getall', payload: {} }
         ApiService.post('nats/request', request)
           .then((response) => {
@@ -204,27 +199,28 @@
           .catch((response) => {
             console.log('ERROR response: ' + JSON.stringify(response))
           })
-
-        this.loading = false
       },
 
       editItem (item) {
         console.log('item: ' + JSON.stringify(item))
         this.editedIndex = this.items.indexOf(item)
         this.editedItem = Object.assign({}, item)
-        this.editedItem.slavename = item.modbusslave.name
         this.dialog = true
       },
 
       deleteItem (item) {
-        ApiService.delete('data/modbus_slaves/' + item.ID)
-          .then(response => {
-            for (var i = 0; i < this.items.length; i++) {
-              if (this.items[i].ID === item.ID) this.items.splice(i, 1)
+        var request = { subject: 'usvc.timescale.meta.delete', payload: { items: [item] } }
+        ApiService.post('nats/request', request)
+          .then((response) => {
+            if (response.data.success) {
+              this.refresh()
+              this.$notification.success('Meta data deleted!')
+            } else {
+              console.log('ERROR response: ' + JSON.stringify(response.data))
             }
-            this.$notification.success('Tag deleted')
-          }).catch(response => {
-            console.log('ERROR response: ' + response.message)
+          })
+          .catch((response) => {
+            console.log('ERROR response: ' + JSON.stringify(response))
           })
       },
 
@@ -237,29 +233,26 @@
       },
 
       save () {
-        if (this.editedIndex > -1) {
-          Object.assign(this.items[this.editedIndex], this.editedItem)
-          ApiService.put('data/modbus_slaves', this.editedItem)
-            .then(response => {
-            }).catch(response => {
-              this.$notification.error('Failed to update tag!' + response)
-            })
-        } else {
-          this.items.push(this.editedItem)
-          ApiService.post('data/modbus_slaves', this.editedItem)
-            .then(response => {
-            }).catch(response => {
-              this.failureMessage('Failed to add tag!' + response)
-            })
-        }
+        Object.assign(this.items[this.editedIndex], this.editedItem)
+        var request = { subject: 'usvc.timescale.meta.updateall', payload: { items: [this.editedItem] } }
+        ApiService.post('nats/request', request)
+          .then(response => {
+            if (response.data.success) {
+              this.$notification.success('Meta data updated!')
+            } else {
+              this.$notification.error('Failed to update meta data: ' + response.data.statusmsg)
+            }
+          }).catch(response => {
+            this.$notification.error('Failed to update meta data: ' + response)
+          })
         this.close()
       },
 
       exportCSV () {
         let csvContent = 'data:text/csv;charset=utf-8,'
         csvContent += [
-          'name;slaveid;',
-          ...this.items.map(item => item.name + ';' + item.slaveid + ';'),
+          'inuse;name;description;min;max;unit;',
+          ...this.items.map(item => 'x;' + item.name + ';' + item.description + ';' + item.min + ';' + item.max + ';' + item.engunit + ';'),
         ]
           .join('\n')
           .replace(/(^\[)|(\]$)/gm, '')
@@ -267,7 +260,7 @@
         const data = encodeURI(csvContent)
         const link = document.createElement('a')
         link.setAttribute('href', data)
-        link.setAttribute('download', 'export.csv')
+        link.setAttribute('download', 'meta.csv')
         link.click()
       },
 
@@ -301,6 +294,55 @@
       processResponse (records) {
         // iterate through all existing items and compare content
         // assume the following column format:
+        // col 0: x indicates in use
+        // col 1: tag name
+        // col 2: tag description
+        // col 3: tag min value
+        // col 4: tag max value
+        // col 5: tag unit
+
+        for (var mi = 0; mi < records.length; mi++) {
+          var record = records[mi]
+          var inuse = record[0]
+          var tagname = record[1]
+          var description = record[2]
+          var min = parseFloat(record[3])
+          var max = parseFloat(record[4])
+          var unit = record[5]
+
+          if (inuse !== 'x') continue
+
+          for (var i = 0; i < this.items.length; i++) {
+            var item = this.items[i]
+
+            if (item.name.indexOf(tagname) === -1) continue
+            var same = item.description === description
+            if (same) same = item.engunit === unit
+            if (same) same |= item.min === min
+            if (same) same |= item.max === max
+
+            if (!same) {
+              item.description = description
+              item.engunit = unit
+              item.min = min
+              item.max = max
+              item.changed = true
+            } else {
+              item.changed = false
+            }
+            break
+          }
+        }
+
+        // keep changed items in the table
+        this.items = this.items.filter(item => item?.changed === true || false)
+
+        this.saveDisabled = this.items.length === 0
+      },
+
+      processResponseModbus (records) {
+        // iterate through all existing items and compare content
+        // assume the following column format:
         // col 0: tag name
         // col 1: tag description
         // col 2: signal type (not relevant)
@@ -324,7 +366,6 @@
 
           var tagname = record[0].trim()
           var description = record[1].trim()
-          var signaltype = record[2].trim()
           var ipaddress = record[3].trim()
           var datatype = record[4].trim()
           var datalengthstr = record[5].trim()
@@ -399,15 +440,15 @@
 
       saveChanges () {
         // console.log('bulk changing items: ' + JSON.stringify(this.items))
-        var request = { subject: 'usvc.modbus.items.bulkchanges', payload: { items: this.items } }
+        var request = { subject: 'usvc.timescale.meta.updateall', payload: { items: this.items } }
         ApiService.post('nats/request', request)
           .then((response) => {
             if (response.data.success) {
-              this.$notification.success('Modbus bulk data change successful')
+              this.$notification.success('Meta data change successful')
               this.refresh()
               this.saveDisabled = true
             } else {
-              this.$notification.error('Modbus bulk data change failed: ' + response.data.statusmsg)
+              this.$notification.error('Meta data change failed: ' + response.data.statusmsg)
             }
           })
           .catch((response) => {

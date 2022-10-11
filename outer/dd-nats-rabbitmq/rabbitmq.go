@@ -3,10 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"time"
 
-	"dd-nats/common/db"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 
@@ -125,35 +123,35 @@ func (emitter *RabbitMQEmitter) processMessages() {
 }
 
 func (emitter *RabbitMQEmitter) syncMetaRabbit() {
-	ticker := time.NewTicker(30 * time.Second)
-	var prevmetaitems []types.DataPointMeta
-	var dosend bool
-	for {
-		<-ticker.C
-		// TODO: replace this with a call to timescale-meta service to get all meta data
-		var metaitems []types.DataPointMeta
-		if err := db.DB.Find(&metaitems).Error; err != nil {
-			fmt.Println("TIMESCALE failed to get meta items,", err.Error())
-			continue
-		}
+	// ticker := time.NewTicker(30 * time.Second)
+	// var prevmetaitems []types.DataPointMeta
+	// var dosend bool
+	// for {
+	// 	<-ticker.C
+	// 	// TODO: replace this with a call to timescale-meta service to get all meta data
+	// 	var metaitems []types.DataPointMeta
+	// 	if err := db.DB.Find(&metaitems).Error; err != nil {
+	// 		fmt.Println("TIMESCALE failed to get meta items,", err.Error())
+	// 		continue
+	// 	}
 
-		// Check individual items (discard items no longer in db)
-		for _, dp := range metaitems {
-			dosend = true
-			for _, pdp := range prevmetaitems {
-				if reflect.DeepEqual(dp, pdp) {
-					dosend = false
-					continue
-				}
-			}
+	// 	// Check individual items (discard items no longer in db)
+	// 	for _, dp := range metaitems {
+	// 		dosend = true
+	// 		for _, pdp := range prevmetaitems {
+	// 			if reflect.DeepEqual(dp, pdp) {
+	// 				dosend = false
+	// 				continue
+	// 			}
+	// 		}
 
-			if dosend {
-				emitter.sendMetaRabbit(&dp)
-			}
-		}
+	// 		if dosend {
+	// 			emitter.sendMetaRabbit(&dp)
+	// 		}
+	// 	}
 
-		prevmetaitems = metaitems
-	}
+	// 	prevmetaitems = metaitems
+	// }
 }
 
 func (emitter *RabbitMQEmitter) sendMetaRabbit(dp *types.DataPointMeta) {
@@ -163,7 +161,7 @@ func (emitter *RabbitMQEmitter) sendMetaRabbit(dp *types.DataPointMeta) {
 	msg.Dimension = dp.EngUnit
 	msg.Max = dp.MaxValue
 	msg.Min = dp.MinValue
-	msg.Deadband = dp.IntegratingDeadband
+	// msg.Deadband = dp.IntegratingDeadband
 
 	body, _ := json.Marshal(msg)
 

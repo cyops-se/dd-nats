@@ -98,14 +98,14 @@
             single-line
             hide-details
           />
-          <v-btn
+          <!-- v-btn
             color="primary"
             dark
             class="ml-3"
             @click="exportCSV"
           >
             Export to CSV
-          </v-btn>
+          </v-btn -->
           <v-btn
             color="primary"
             dark
@@ -126,12 +126,12 @@
         </v-toolbar>
       </template>
       <template v-slot:item.actions="{ item }">
-        <v-icon
+        <!-- v-icon
           class="mr-2"
           @click="editItem(item)"
         >
           mdi-pencil
-        </v-icon>
+        </v-icon -->
         <v-icon
           @click="deleteItem(item)"
         >
@@ -161,16 +161,16 @@
           text: 'ID',
           align: 'start',
           filterable: false,
-          value: 'ID',
+          value: 'id',
           width: 75,
         },
         { text: 'Name', value: 'name', width: '20%' },
         { text: 'Description', value: 'description', width: '30%' },
         { text: 'Modbus Slave', value: 'modbusslave.ip', width: '90px' },
+        { text: 'Value', value: 'value', width: '90px' },
         { text: 'Register', value: 'modbusaddress', width: '90px' },
-        { text: 'Adapted', value: 'adaptedaddress', width: '90px' },
         { text: 'FC', value: 'functioncode', width: '90px' },
-        { text: '', value: 'diff', width: '110px' },
+        { text: '', value: 'diff', width: '60px' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
       ],
       items: [],
@@ -190,14 +190,9 @@
 
     created () {
       this.refresh()
-      WebsocketService.topic('data.message', this, function (topic, message, t) {
-        // console.log(JSON.stringify(message))
-        var msg = JSON.parse(message)
-        for (var i = 0; i < msg.points.length; i++) {
-          var p = msg.points[i]
-          var item = t.items.find(i => i.name === p.n)
-          if (item) Vue.set(item, 'value', p.v)
-        }
+      WebsocketService.topic('process.actual', this, function (topic, p, t) {
+        var item = t.items.find(i => i.name === p.n)
+        if (item) Vue.set(item, 'value', p.v.toFixed(2))
       })
     },
 
@@ -248,10 +243,13 @@
       },
 
       deleteItem (item) {
-        ApiService.delete('data/modbus_slaves/' + item.ID)
+        console.log('deleting item: ' + JSON.stringify(item))
+        var request = { subject: 'usvc.modbus.items.delete', payload: { items: [item] } }
+        ApiService.post('nats/request', request)
           .then(response => {
+            console.log('response: ' + JSON.stringify(response.data))
             for (var i = 0; i < this.items.length; i++) {
-              if (this.items[i].ID === item.ID) this.items.splice(i, 1)
+              if (this.items[i].id === item.id) this.items.splice(i, 1)
             }
             this.$notification.success('Tag deleted')
           }).catch(response => {
@@ -355,7 +353,6 @@
 
           var tagname = record[0].trim()
           var description = record[1].trim()
-          var signaltype = record[2].trim()
           var ipaddress = record[3].trim()
           var datatype = record[4].trim()
           var datalengthstr = record[5].trim()
@@ -367,13 +364,6 @@
           var plcrangestr = record[11].trim()
           var found = false
           var slave
-
-          // for (var g = 0; g < this.slaves.length; g++) {
-          //   if (this.slaves[g].ID === slaveid) {
-          //     slave = this.slaves[g]
-          //     break
-          //   }
-          // }
 
           var ranges = rangestr.split('-')
           var plcranges = plcrangestr.split('-')
@@ -429,7 +419,6 @@
       },
 
       saveChanges () {
-        // console.log('bulk changing items: ' + JSON.stringify(this.items))
         var request = { subject: 'usvc.modbus.items.bulkchanges', payload: { items: this.items } }
         ApiService.post('nats/request', request)
           .then((response) => {
@@ -446,16 +435,6 @@
             this.$notification.error('Modbus bulk data change failed: ' + response.message)
           })
         this.close()
-
-        // var t = this
-        // console.log('posting: ' + JSON.stringify(this.items))
-        // ApiService.post('modbus/tag/changes', this.items)
-        //   .then(response => {
-        //     t.$notification.success('Changes saved')
-        //     t.update()
-        //   }).catch(function (response) {
-        //     t.$notification.error('Failed to save changes: ' + response)
-        //   })
       },
     },
   }

@@ -191,12 +191,9 @@
 
     created () {
       this.refresh()
-      WebsocketService.topic('forward.process', this, function (topic, msg, t) {
-        for (var i = 0; i < msg.points.length; i++) {
-          var p = msg.points[i]
-          var item = t.items.find(i => i.name === p.n)
-          if (item) Vue.set(item, 'value', p.v)
-        }
+      WebsocketService.topic('process.actual', this, function (topic, p, t) {
+        var item = t.items.find(i => i.name === p.n)
+        if (item) Vue.set(item, 'value', p.v.toFixed(2))
       })
     },
 

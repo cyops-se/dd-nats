@@ -19,8 +19,12 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	logger.Info("Microservices", "Process filter microservice running")
 
 	datapoints = make(map[string]*filteredPoint)
+	loadFilterMeta()
 	registerFilterRoutes()
 
 	// Listen for incoming process data from the inside
 	ddnats.Subscribe("inner.process.actual", processDataPointHandler)
+
+	// Listen for changes to meta data
+	ddnats.Subscribe("system.event.timescale.metaupdated", processMetaUpdate)
 }

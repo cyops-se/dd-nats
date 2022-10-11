@@ -60,12 +60,12 @@ func updateModbusItem(nmsg *nats.Msg) {
 
 func deleteModbusItem(nmsg *nats.Msg) {
 	response := ddsvc.StatusResponse{Success: true}
-	var items modbus.ModbusSlaveItems
+	var items modbus.ModbusItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
-		if err := modbus.DeleteModbusSlaves(items); err != nil {
+		if err := modbus.DeleteModbusItems(items); err != nil {
 			response.Success = false
 			response.StatusMessage = err.Error()
 		}

@@ -2,10 +2,13 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"encoding/json"
+	"log"
 	"math"
+	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -16,6 +19,11 @@ const (
 	FilterTypeInterval = 1
 	FilterTypeDeadband = 2
 )
+
+type allMetaResponse struct {
+	ddsvc.StatusResponse
+	Items types.DataPointMetas `json:"items"`
+}
 
 // Three types of filters is provided
 // 0. No filtering, forward as is
@@ -85,6 +93,7 @@ func processDataPointHandler(nmsg *nats.Msg) {
 
 		ddnats.Publish("process.actual", dp)
 		if fp.FilterType == FilterTypeNone {
+			fp.PreviousValue = dp.Value
 			ddnats.Publish("process.filtered", dp)
 		} else if fp.FilterType == FilterTypeInterval {
 			if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
@@ -104,4 +113,53 @@ func processDataPointHandler(nmsg *nats.Msg) {
 	} else {
 		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
 	}
+}
+
+func processMetaUpdate(nmsg *nats.Msg) {
+	syncMetaWithTimescale()
+}
+
+func saveFilterMeta() error {
+	filename := "filterdata.json"
+	if content, err := json.Marshal(datapoints); err == nil {
+		err := os.WriteFile(filename, content, 0755)
+		return err
+	} else {
+		return err
+	}
+}
+
+func loadFilterMeta() error {
+	filename := "filterdata.json"
+	if content, err := os.ReadFile(filename); err != nil {
+		return err
+	} else {
+		if err := json.Unmarshal(content, &datapoints); err != nil {
+			return err
+		}
+	}
+
+	return syncMetaWithTimescale()
+}
+
+func syncMetaWithTimescale() error {
+	response, err := ddnats.Request("usvc.timescale.meta.getall", nil)
+	if err != nil {
+		log.Printf("failed to get meta from timescale: %s", err.Error())
+		return err
+	}
+
+	var metaitems allMetaResponse
+	if err := json.Unmarshal(response.Data, &metaitems); err != nil {
+		return err
+	}
+
+	for _, item := range metaitems.Items {
+		if fp, ok := datapoints[item.Name]; ok {
+			fp.Min = item.MinValue
+			fp.Max = item.MaxValue
+		}
+	}
+
+	return nil
 }

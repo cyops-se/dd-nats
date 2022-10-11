@@ -9,6 +9,10 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+type allFilteredPoints struct {
+	Items []*filteredPoint `json:"items"`
+}
+
 type allFilteredPointsResponse struct {
 	ddsvc.StatusResponse
 	Items []*filteredPoint `json:"items"`
@@ -37,13 +41,19 @@ func setFilterPoint(nmsg *nats.Msg) {
 	var response ddsvc.StatusResponse
 	response.Success = true
 
-	var item filteredPoint
-	if err := json.Unmarshal(nmsg.Data, &item); err != nil {
+	var items allFilteredPoints
+	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 		log.Println("request body:", string(nmsg.Data), ", error:", err.Error())
 	} else {
-		datapoints[item.DataPoint.Name] = &item
+		for _, item := range items.Items {
+			datapoints[item.DataPoint.Name] = item
+			if err = saveFilterMeta(); err != nil {
+				response.Success = false
+				response.StatusMessage = err.Error()
+			}
+		}
 	}
 
 	ddnats.Respond(nmsg, response)

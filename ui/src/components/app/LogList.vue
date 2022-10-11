@@ -22,10 +22,10 @@
     props: {
       method: String,
       payload: String,
+      search: String,
     },
 
     data: () => ({
-      search: '',
       loading: false,
       headers: [
         {
