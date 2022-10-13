@@ -72,6 +72,7 @@
       tags: [],
       tree: [],
       search: '',
+      settings: {},
       delimiter: '.',
     }),
 
@@ -88,18 +89,21 @@
     },
 
     mounted () {
-      // this.loadSettings()
+      this.loadSettings()
       this.refresh()
       this.rootSelected()
     },
 
     methods: {
       loadSettings () {
-        ApiService.get('data/key_value_pairs/field/key/tagpathdelimiter')
+        var request = { subject: 'usvc.ddnatsopcda.settings.get', payload: {} }
+        ApiService.post('nats/request', request)
           .then(response => {
-            if (response.data) this.delimiter = response.data[0].value
+            this.settings = response.data.items
+            this.delimiter = this.settings.tagpathdelimiter
           }).catch(response => {
-            console.log('Failed to get delimiter: ' + response.message)
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to get groups: ' + response.message)
           })
       },
 
@@ -141,7 +145,7 @@
       activated (item) {
         var op = item.file === 'tag' ? 'deletebyname' : 'add'
         var tag = item.path.replaceAll('/', this.delimiter)
-        var payload = { serverid: parseInt(this.$route.params.serverid), items: [{ tag: tag }] }
+        var payload = { sid: parseInt(this.$route.params.serverid), items: [{ tag: tag }] }
         var request = { subject: 'usvc.opc.tags.' + op, payload }
         ApiService.post('nats/request', request)
           .then(response => {
@@ -158,7 +162,7 @@
 
       async loadBranch (item) {
         var branch = item.path.replaceAll('/', '.')
-        var payload = { serverid: parseInt(this.$route.params.serverid), branch: branch }
+        var payload = { sid: parseInt(this.$route.params.serverid), branch: branch }
         var request = { subject: 'usvc.opc.servers.getbranch', payload }
         return ApiService.post('nats/request', request)
           .then(response => {
