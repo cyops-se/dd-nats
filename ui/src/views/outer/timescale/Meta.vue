@@ -318,8 +318,8 @@
             if (item.name.indexOf(tagname) === -1) continue
             var same = item.description === description
             if (same) same = item.engunit === unit
-            if (same) same |= item.min === min
-            if (same) same |= item.max === max
+            if (same) same = item.min === min
+            if (same) same = item.max === max
 
             if (!same) {
               item.description = description

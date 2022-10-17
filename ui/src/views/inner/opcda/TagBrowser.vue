@@ -88,18 +88,21 @@
     },
 
     mounted () {
-      // this.loadSettings()
+      this.loadSettings()
       this.refresh()
       this.rootSelected()
     },
 
     methods: {
       loadSettings () {
-        ApiService.get('data/key_value_pairs/field/key/tagpathdelimiter')
+        var request = { subject: 'usvc.ddnatsopcda.settings.get', payload: {} }
+        ApiService.post('nats/request', request)
           .then(response => {
-            if (response.data) this.delimiter = response.data[0].value
+            this.settings = response.data.items
+            this.delimiter = this.settings.tagpathdelimiter
           }).catch(response => {
-            console.log('Failed to get delimiter: ' + response.message)
+            console.log('ERROR response: ' + response.message)
+            this.$notification.error('Failed to get groups: ' + response.message)
           })
       },
 
