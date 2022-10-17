@@ -174,7 +174,7 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 }
 
 func InitGroups(svc *ddsvc.DdUsvc) {
-	svc.Set("tagpathdelimiter", ".")
+	svc.Get("tagpathdelimiter", ".")
 
 	items, _ := GetGroups()
 	for _, item := range items {

@@ -72,6 +72,7 @@
       tags: [],
       tree: [],
       search: '',
+      settings: {},
       delimiter: '.',
     }),
 
@@ -144,7 +145,7 @@
       activated (item) {
         var op = item.file === 'tag' ? 'deletebyname' : 'add'
         var tag = item.path.replaceAll('/', this.delimiter)
-        var payload = { serverid: parseInt(this.$route.params.serverid), items: [{ tag: tag }] }
+        var payload = { sid: parseInt(this.$route.params.serverid), items: [{ tag: tag }] }
         var request = { subject: 'usvc.opc.tags.' + op, payload }
         ApiService.post('nats/request', request)
           .then(response => {
@@ -161,7 +162,7 @@
 
       async loadBranch (item) {
         var branch = item.path.replaceAll('/', '.')
-        var payload = { serverid: parseInt(this.$route.params.serverid), branch: branch }
+        var payload = { sid: parseInt(this.$route.params.serverid), branch: branch }
         var request = { subject: 'usvc.opc.servers.getbranch', payload }
         return ApiService.post('nats/request', request)
           .then(response => {
