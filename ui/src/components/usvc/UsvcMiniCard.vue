@@ -40,13 +40,16 @@
       lastseen (news, olds) {
         this.service = this.services[this.usvc]
         if (!this.service) return
+        // console.log('this.service: ' + JSON.stringify(this.service))
         for (const i in this.service) {
           var instance = this.service[i]
+          if (instance === true) continue
+          // console.log('service: ' + this.usvc + ', instance: ' + instance + ', state: ' + instance.state)
           if (instance.state === 'alive') {
             this.alive = true
             this.color = 'success'
           } else if (instance.state === 'stalling') {
-            console.log('service instance stalling: ' + instance.appname + ': ' + JSON.stringify(instance))
+            // console.log('service instance stalling: ' + instance.appname + ': ' + JSON.stringify(instance))
             this.alive = false
             this.color = 'warning'
           } else {

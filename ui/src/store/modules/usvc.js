@@ -27,7 +27,9 @@ const actions = {
       if (!msg.identity || msg.identity === '') msg.identity = 'default'
       if (!state.services[name]) state.services[name] = {}
       var prevstate = state.services[name] && state.services[name][msg.identity] ? state.services[name][msg.identity].state : 'unknown'
-      state.services[name][msg.identity] = { appname: msg.appname, id: msg.identity, msg: msg, alive: true, lastseen: new Date(msg.timestamp), state: 'alive', count: 0 }
+      state.services[name][msg.identity] = { appname: msg.appname, id: msg.identity, msg: msg, alive: true, lastseen: new Date(), state: 'alive', count: 0 }
+      state.services[name].alive = true
+
       state.lastseen = Date.now() // this is a crappy workaround to have the services state updated in other components
       if (prevstate !== state.services[name][msg.identity].state) state.statechange = Date.now()
 
@@ -43,16 +45,30 @@ const actions = {
       for (const p in state.services) {
         for (const i in state.services[p]) {
           if (!state.services[p][i].lastseen || state.services[p][i].state === 'dead') continue
-          var diff = Math.abs(now - state.services[p][i].lastseen) / 1000
+          var diff = Math.abs(now.getTime() - state.services[p][i].lastseen.getTime()) / 1000
+
           if (diff > 4 && diff <= 8) {
             state.services[p][i].state = 'stalling'
             state.statechange = Date.now()
           } else if (diff > 8) {
+            // console.log('service: ' + p + ', instance: ' + i + ', diff: ' + diff + ', now: ' + now + ', lastseen: ' + state.services[p][i].lastseen)
             state.services[p][i].state = 'dead'
             state.services[p][i].alive = false
             state.statechange = Date.now()
           }
         }
+
+        // Check all instances again to set the aggregated alive state correctly
+        var anyalive = false
+        for (const i in state.services[p]) {
+          if (state.services[p][i].state === 'alive') {
+            anyalive = true
+            break
+          }
+        }
+
+        state.services[p].alive = anyalive
+
         // console.log('service ' + state.services[p].appname + ', state: ' + state.services[p].state)
       }
     }, 2000)
