@@ -279,7 +279,7 @@ func checkSlaveIP(posteditem *BulkChangeModbusItem) (uint, error) {
 	}
 
 	var item ModbusSlaveItem
-	err := db.DB.First(&item, "ip_address = ?", posteditem.ModbusSlave.IPAddress).Error
+	err := db.DB.First(&item, "ip_address = ?", posteditem.IPAddress).Error
 	if err != nil {
 		item.IPAddress = posteditem.IPAddress
 		item.Name = posteditem.IPAddress

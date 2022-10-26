@@ -13,15 +13,23 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-func registerGroupRoutes() {
-	ddnats.Subscribe("usvc.opc.groups.getall", getAllOpcGroups)
-	ddnats.Subscribe("usvc.opc.groups.getbyid", getOpcGroupById)
-	ddnats.Subscribe("usvc.opc.groups.add", addOpcGroups)
-	ddnats.Subscribe("usvc.opc.groups.update", updateOpcGroups)
-	ddnats.Subscribe("usvc.opc.groups.delete", deleteOpcGroups)
-	ddnats.Subscribe("usvc.opc.groups.deleteall", deleteAllOpcGroups)
-	ddnats.Subscribe("usvc.opc.groups.start", startOpcGroup)
-	ddnats.Subscribe("usvc.opc.groups.stop", stopOpcGroup)
+func registerGroupRoutes(svc *ddsvc.DdUsvc) {
+	ddnats.Subscribe(svc.RouteName("opc", "groups.getall"), getAllOpcGroups)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.getbyid"), getOpcGroupById)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.add"), addOpcGroups)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.update"), updateOpcGroups)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.delete"), deleteOpcGroups)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.deleteall"), deleteAllOpcGroups)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.start"), startOpcGroup)
+	ddnats.Subscribe(svc.RouteName("opc", "groups.stop"), stopOpcGroup)
+	// ddnats.Subscribe("usvc.opc.groups.getall", getAllOpcGroups)
+	// ddnats.Subscribe("usvc.opc.groups.getbyid", getOpcGroupById)
+	// ddnats.Subscribe("usvc.opc.groups.add", addOpcGroups)
+	// ddnats.Subscribe("usvc.opc.groups.update", updateOpcGroups)
+	// ddnats.Subscribe("usvc.opc.groups.delete", deleteOpcGroups)
+	// ddnats.Subscribe("usvc.opc.groups.deleteall", deleteAllOpcGroups)
+	// ddnats.Subscribe("usvc.opc.groups.start", startOpcGroup)
+	// ddnats.Subscribe("usvc.opc.groups.stop", stopOpcGroup)
 }
 
 func getAllOpcGroups(nmsg *nats.Msg) {
@@ -54,7 +62,7 @@ func getOpcGroupById(nmsg *nats.Msg) {
 }
 
 func addOpcGroups(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -70,7 +78,7 @@ func addOpcGroups(nmsg *nats.Msg) {
 }
 
 func updateOpcGroups(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -101,7 +109,7 @@ func updateOpcGroups(nmsg *nats.Msg) {
 }
 
 func deleteOpcGroups(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.Groups
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -121,7 +129,7 @@ func deleteOpcGroups(nmsg *nats.Msg) {
 }
 
 func deleteAllOpcGroups(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items []app.OpcTagItem
 	if err := db.DB.Delete(&items, "1 = 1").Error; err != nil {
 		response.Success = false
@@ -131,7 +139,7 @@ func deleteAllOpcGroups(nmsg *nats.Msg) {
 }
 
 func startOpcGroup(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 
 	var intmsg types.IntMessage
 	var group app.OpcGroupItem
@@ -151,7 +159,7 @@ func startOpcGroup(nmsg *nats.Msg) {
 	ddnats.Respond(nmsg, response)
 }
 func stopOpcGroup(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 
 	var intmsg types.IntMessage
 	var group app.OpcGroupItem

@@ -166,7 +166,7 @@
         },
         { text: 'Name', value: 'name', width: '20%' },
         { text: 'Description', value: 'description', width: '30%' },
-        { text: 'Modbus Slave', value: 'modbusslave.ip', width: '90px' },
+        { text: 'Modbus Slave', value: 'ipaddress', width: '90px' },
         { text: 'Value', value: 'value', width: '90px' },
         { text: 'Register', value: 'modbusaddress', width: '90px' },
         { text: 'FC', value: 'functioncode', width: '90px' },
@@ -390,7 +390,7 @@
             break
           }
 
-          console.log('tag: ' + tagname + ', found: ' + found)
+          console.log('tag: ' + tagname + ', found: ' + found + ', ip: ' + ipaddress)
           if (!found) {
             console.log('NEW tag: ' + tagname + ', found: ' + found)
             var newitem = { name: tagname, description: description, modbusaddress: modbusaddress, engunit: engunit, functioncode: functioncode, new: true, diff: 'new' }

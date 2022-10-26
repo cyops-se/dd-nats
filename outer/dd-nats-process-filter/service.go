@@ -2,7 +2,7 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
-	"dd-nats/common/ddsvc"
+	"dd-nats/common/types"
 	"encoding/json"
 	"log"
 
@@ -14,7 +14,7 @@ type allFilteredPoints struct {
 }
 
 type allFilteredPointsResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Items []*filteredPoint `json:"items"`
 }
 
@@ -38,7 +38,7 @@ func getAllFilteredPoints(nmsg *nats.Msg) {
 }
 
 func setFilterPoint(nmsg *nats.Msg) {
-	var response ddsvc.StatusResponse
+	var response types.StatusResponse
 	response.Success = true
 
 	var items allFilteredPoints

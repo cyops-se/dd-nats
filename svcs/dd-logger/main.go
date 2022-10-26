@@ -15,7 +15,7 @@ type categoryRequest struct {
 }
 
 type logResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Entries []types.Log `json:"items"`
 }
 

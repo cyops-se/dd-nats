@@ -13,7 +13,7 @@
           <template #heading>
             <div class="pa-6 white--text">
               <div class="text-h4 font-weight-light">
-                OPC DA Tag Browser
+                OPC DA Tag Browser - <strong>{{ selected.key }}</strong>
               </div>
 
               <div class="text-subtitle-1">
@@ -57,6 +57,7 @@
 </template>
 
 <script>
+  import { sync } from 'vuex-pathify'
   import ApiService from '@/services/api.service'
   export default {
     name: 'TagBrowserView',
@@ -77,6 +78,9 @@
     }),
 
     computed: {
+      ...sync('context', [
+        'selected',
+      ]),
       filter () {
         return this.caseSensitive
           ? (item, search, textKey) => item[textKey].indexOf(search) > -1
@@ -96,7 +100,8 @@
 
     methods: {
       loadSettings () {
-        var request = { subject: 'usvc.ddnatsopcda.settings.get', payload: {} }
+        if (!this.selected) return
+        var request = { subject: 'usvc.ddnatsopcda.' + this.selected.key + '.settings.get', payload: {} }
         ApiService.post('nats/request', request)
           .then(response => {
             this.settings = response.data.items
@@ -108,7 +113,7 @@
       },
 
       refresh () {
-        var request = { subject: 'usvc.opc.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
         ApiService.post('nats/request', request)
           .then(response => {
             this.tags = response.data.items
@@ -120,7 +125,7 @@
 
       rootSelected () {
         this.items = []
-        var request = { subject: 'usvc.opc.servers.root', payload: { value: parseInt(this.$route.params.serverid) } }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.servers.root', payload: { value: parseInt(this.$route.params.serverid) } }
         ApiService.post('nats/request', request)
           .then(response => {
             var payload = response.data
@@ -146,7 +151,7 @@
         var op = item.file === 'tag' ? 'deletebyname' : 'add'
         var tag = item.path.replaceAll('/', this.delimiter)
         var payload = { sid: parseInt(this.$route.params.serverid), items: [{ tag: tag }] }
-        var request = { subject: 'usvc.opc.tags.' + op, payload }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.' + op, payload }
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
@@ -163,7 +168,7 @@
       async loadBranch (item) {
         var branch = item.path.replaceAll('/', '.')
         var payload = { sid: parseInt(this.$route.params.serverid), branch: branch }
-        var request = { subject: 'usvc.opc.servers.getbranch', payload }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.servers.getbranch', payload }
         return ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.branches) {

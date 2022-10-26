@@ -4,6 +4,7 @@ import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
+	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-opcda/app"
 	"dd-nats/inner/dd-nats-opcda/messages"
 	"encoding/json"
@@ -13,13 +14,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func registerTagRoutes() {
-	ddnats.Subscribe("usvc.opc.tags.getall", getAllOpcTags)
-	ddnats.Subscribe("usvc.opc.tags.add", addOpcTags)
-	ddnats.Subscribe("usvc.opc.tags.update", updateOpcTags)
-	ddnats.Subscribe("usvc.opc.tags.delete", deleteOpcTags)
-	ddnats.Subscribe("usvc.opc.tags.deletebyname", deleteOpcTagByName)
-	ddnats.Subscribe("usvc.opc.tags.deleteall", deleteAllOpcTags)
+func registerTagRoutes(svc *ddsvc.DdUsvc) {
+	ddnats.Subscribe(svc.RouteName("opc", "tags.getall"), getAllOpcTags)
+	ddnats.Subscribe(svc.RouteName("opc", "tags.add"), addOpcTags)
+	ddnats.Subscribe(svc.RouteName("opc", "tags.update"), updateOpcTags)
+	ddnats.Subscribe(svc.RouteName("opc", "tags.delete"), deleteOpcTags)
+	ddnats.Subscribe(svc.RouteName("opc", "tags.deletebyname"), deleteOpcTagByName)
+	ddnats.Subscribe(svc.RouteName("opc", "tags.deleteall"), deleteAllOpcTags)
+	// ddnats.Subscribe("usvc.opc.tags.getall", getAllOpcTags)
+	// ddnats.Subscribe("usvc.opc.tags.add", addOpcTags)
+	// ddnats.Subscribe("usvc.opc.tags.update", updateOpcTags)
+	// ddnats.Subscribe("usvc.opc.tags.delete", deleteOpcTags)
+	// ddnats.Subscribe("usvc.opc.tags.deletebyname", deleteOpcTagByName)
+	// ddnats.Subscribe("usvc.opc.tags.deleteall", deleteAllOpcTags)
 }
 
 func getAllOpcTags(nmsg *nats.Msg) {
@@ -34,7 +41,7 @@ func getAllOpcTags(nmsg *nats.Msg) {
 }
 
 func addOpcTags(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.Tags
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -62,7 +69,7 @@ func addOpcTags(nmsg *nats.Msg) {
 }
 
 func updateOpcTags(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.OpcItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -78,7 +85,7 @@ func updateOpcTags(nmsg *nats.Msg) {
 }
 
 func deleteOpcTags(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.OpcItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -94,7 +101,7 @@ func deleteOpcTags(nmsg *nats.Msg) {
 }
 
 func deleteOpcTagByName(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items messages.Tags
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -112,7 +119,7 @@ func deleteOpcTagByName(nmsg *nats.Msg) {
 }
 
 func deleteAllOpcTags(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var dbitems []app.OpcTagItem
 	if err := db.DB.Delete(&dbitems, "1 = 1").Error; err != nil {
 		response.Success = false

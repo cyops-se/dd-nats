@@ -19,6 +19,7 @@ type UdpStatistics struct {
 
 type Heartbeat struct {
 	Hostname  string    `json:"hostname"`
+	Identity  string    `json:"identity"`
 	AppName   string    `json:"appname"`
 	Version   string    `json:"version"`
 	Timestamp time.Time `json:"timestamp"`

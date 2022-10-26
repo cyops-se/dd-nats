@@ -2,11 +2,12 @@ package routes
 
 import (
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 
 	"github.com/nats-io/nats.go"
 )
 
-func registerSystemRoutes() {
+func registerSystemRoutes(svc *ddsvc.DdUsvc) {
 	ddnats.Subscribe("system.heartbeat", systemHeartbeats)
 }
 

@@ -22,7 +22,7 @@
           :key="link.text"
         >
           <v-list-item
-            v-if="!link.sublinks && showitem(link)"
+            v-if="!link.sublinks && link.alive"
             :to="link.to"
             class="v-list-item"
             :active-class="`${color} lighten-3 ${theme.isDark ? 'black' : 'white'}--text`"
@@ -35,7 +35,7 @@
           </v-list-item>
 
           <v-list-group
-            v-else-if="showitem(link)"
+            v-else-if="link.alive"
             :key="link.text"
             :prepend-icon="link.icon"
             :value="false"
@@ -86,7 +86,6 @@
 <script>
   // Utilities
   import { get, sync } from 'vuex-pathify'
-  import WebsocketService from '@/services/websocket.service'
 
   export default {
     name: 'DefaultDrawer',
@@ -180,7 +179,7 @@
         },
         {
           icon: 'mdi-history',
-          text: 'Tag History',
+          text: 'Process cache',
           to: '/pages/cache',
           usvc: 'ddnatscache',
         },
@@ -290,7 +289,7 @@
           text: 'Console settings',
         },
       ],
-      services: {},
+      // services: {},
     }),
 
     computed: {
@@ -301,43 +300,45 @@
         'drawer',
         'mini',
       ]),
+      ...sync('usvc', [
+        'services',
+        'lastseen',
+      ]),
+    },
+
+    watch: {
+      // whenever question changes, this function will run
+      lastseen (news, olds) {
+        this.checkstates()
+      },
     },
 
     created () {
-      WebsocketService.topic('system.heartbeat', this, function (topic, msg, t) {
-        if (t.services) {
-          var appname = msg.appname.replaceAll('-', '')
-          t.services = { ...t.services, [appname]: { name: appname, state: 'alive', count: 0, lastbeat: new Date() } }
-        }
-      })
-
       var t = this
-      setInterval(function () {
-        var now = new Date()
-        for (const p in t.services) {
-          if (!t.services[p].lastbeat || t.services[p].state === 'dead') continue
-          var n = now.getSeconds()
-          var lb = t.services[p].lastbeat.getSeconds()
-          var diff = Math.abs(n - lb)
-          if (diff > 2) {
-            t.services[p].state = 'stalling'
-            if (t.services[p].count++ > 3) {
-              console.log('deleting: ' + p)
-              t.services[p].state = 'dead'
-            }
-          }
-        }
-      }, 1000)
+      t.checkstates()
     },
 
     methods: {
-      showitem (item) {
-        if (!item || !item.usvc) return true
+      checkstates () {
+        for (const i in this.links) this.showitem(i)
+      },
+
+      showitem (li) {
+        var item = this.links[li]
+        if (!item || !item.usvc) { item.alive = true; return true }
         var items = item.usvc.split('|')
         var result = false
         for (var i in items) {
           var usvcname = items[i]
-          if (item.usvc && this.services[usvcname] && this.services[usvcname].state !== 'dead') result = true
+          for (const i in this.services[usvcname]) {
+            if (item.usvc && this.services[usvcname][i] && this.services[usvcname][i].alive) {
+              item.alive = true
+              break
+            } else {
+              item.alive = false
+            }
+          }
+          this.links = { ...this.links, [li]: item }
         }
         return result
       },

@@ -92,6 +92,7 @@
             </v-card>
           </v-dialog>
           <v-text-field
+            v-if="selected"
             v-model="search"
             append-icon="mdi-magnify"
             label="Search"
@@ -99,6 +100,7 @@
             hide-details
           />
           <v-btn
+            v-if="selected"
             color="primary"
             dark
             class="ml-3"
@@ -107,6 +109,7 @@
             Export to CSV
           </v-btn>
           <v-btn
+            v-if="selected"
             color="primary"
             dark
             class="ml-3"
@@ -115,6 +118,7 @@
             Import from CSV
           </v-btn>
           <v-btn
+            v-if="selected"
             color="success"
             dark
             class="ml-3"
@@ -123,6 +127,10 @@
           >
             Save changes
           </v-btn>
+          <instance-selector
+            svcname="ddnatsopcda"
+            @change="refresh"
+          />
         </v-toolbar>
       </template>
       <template
@@ -148,6 +156,7 @@
 
 <script>
   import Vue from 'vue'
+  import { sync } from 'vuex-pathify'
   import ApiService from '@/services/api.service'
   import WebsocketService from '@/services/websocket.service'
   export default {
@@ -189,6 +198,12 @@
       groupsTable: {},
     }),
 
+    computed: {
+      ...sync('context', [
+        'selected',
+      ]),
+    },
+
     created () {
       this.refresh()
       WebsocketService.topic('process.actual', this, function (topic, p, t) {
@@ -201,17 +216,18 @@
       initialize () {},
 
       refresh () {
+        if (!this.selected) return
         this.loading = true
-        var request = { subject: 'usvc.opc.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
         ApiService.post('nats/request', request)
           .then(response => {
             this.items = response.data.items
           }).catch(response => {
             this.$notification.error('Failed to get tags: ' + response.data.statusmsg)
           })
-        request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+
+        request = { subject: 'usvc.opc.' + this.selected.key + '.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
         ApiService.post('nats/request', request)
-          // ApiService.get('opc/tag/names')
           .then(response => {
             if (response.data.success) {
               this.groups = response.data.items
@@ -232,8 +248,9 @@
       },
 
       deleteItem (item) {
+        if (!this.selected) return
         var payload = { items: [item] }
-        var request = { subject: 'usvc.opc.tags.delete', payload }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.delete', payload }
         ApiService.post('nats/request', request)
           .then(response => {
             this.refresh()
@@ -258,7 +275,7 @@
       save () {
         var op = this.editedIndex > -1 ? 'update' : 'add'
         var payload = { items: [this.editedItem] }
-        var request = { subject: 'usvc.opc.tags.' + op, payload }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.' + op, payload }
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
@@ -374,8 +391,9 @@
       },
 
       saveChanges () {
+        if (!this.selected) return
         var payload = { items: this.items }
-        var request = { subject: 'usvc.opc.tags.update', payload }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.update', payload }
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
@@ -389,17 +407,11 @@
           })
         this.close()
       },
-
-      saveChangesOld () {
-        var t = this
-        ApiService.post('opc/tag/changes', this.items)
-          .then(response => {
-            t.$notification.success('Changes saved')
-            t.refresh()
-          }).catch(function (response) {
-            t.$notification.error('Failed to save changes: ' + response)
-          })
-      },
     },
   }
 </script>
+
+<style lang="sass">
+.instance-selector
+  width: 250px
+</style>

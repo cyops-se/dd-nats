@@ -8,7 +8,9 @@ import (
 	"log"
 	"os"
 	"path"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -25,7 +27,7 @@ type SetSettingsRequest struct {
 }
 
 type GetSettingsResponse struct {
-	StatusResponse
+	types.StatusResponse
 	Items map[string]string `json:"items"`
 }
 
@@ -34,7 +36,7 @@ type DeleteSettingRequest struct {
 }
 
 type DeleteSettingResponse struct {
-	StatusResponse
+	types.StatusResponse
 	Items map[string]string `json:"items"`
 }
 
@@ -45,11 +47,11 @@ func InitService(name string) *DdUsvc {
 
 		ddnats.Connect(ctx.NatsUrl)
 		shortname := strings.ReplaceAll(name, "-", "")
-		ddnats.Subscribe("usvc."+shortname+".settings.get", svc.getSettings)
-		ddnats.Subscribe("usvc."+shortname+".settings.set", svc.setSettings)
-		ddnats.Subscribe("usvc."+shortname+".settings.delete", svc.deleteSetting)
+		ddnats.Subscribe("usvc."+shortname+"."+svc.Context.Id+".settings.get", svc.getSettings)
+		ddnats.Subscribe("usvc."+shortname+"."+svc.Context.Id+".settings.set", svc.setSettings)
+		ddnats.Subscribe("usvc."+shortname+"."+svc.Context.Id+".settings.delete", svc.deleteSetting)
 
-		go ddnats.SendHeartbeat(name)
+		go svc.SendHeartbeat()
 
 		return svc
 	}
@@ -59,6 +61,23 @@ func InitService(name string) *DdUsvc {
 
 func (svc *DdUsvc) RunService(engine func(*DdUsvc)) {
 	RunService(svc, engine)
+}
+
+func (svc *DdUsvc) SendHeartbeat() {
+	ticker := time.NewTicker(1 * time.Second)
+	hostname, _ := os.Hostname()
+
+	for {
+		<-ticker.C
+		heartbeat := &types.Heartbeat{Hostname: hostname, AppName: svc.Name, Version: "0.0.1", Timestamp: time.Now().UTC(), Identity: svc.Context.Id}
+		// payload, _ := json.Marshal(heartbeat)
+		ddnats.Publish("system.heartbeat", heartbeat)
+	}
+}
+
+func (svc *DdUsvc) RouteName(shortname string, method string) string {
+	name := fmt.Sprintf("usvc.%s.%s.%s", shortname, svc.Context.Id, method)
+	return name
 }
 
 func (svc *DdUsvc) Get(name string, defaultvalue string) string {
@@ -72,8 +91,25 @@ func (svc *DdUsvc) Get(name string, defaultvalue string) string {
 	return defaultvalue
 }
 
+func (svc *DdUsvc) GetInt(name string, defaultvalue int) int {
+	if value, ok := svc.Settings[name]; ok {
+		intvalue, _ := strconv.Atoi(value)
+		return intvalue
+	}
+
+	svc.SetInt(name, defaultvalue)
+	svc.saveSettings()
+
+	return defaultvalue
+}
+
 func (svc *DdUsvc) Set(name string, value string) {
 	svc.Settings[name] = value
+	svc.saveSettings()
+}
+
+func (svc *DdUsvc) SetInt(name string, value int) {
+	svc.Settings[name] = fmt.Sprintf("%d", value)
 	svc.saveSettings()
 }
 
@@ -83,6 +119,7 @@ func (svc *DdUsvc) initSettings(ctx *types.Context) {
 	if _, err := os.Stat(filename); err != nil {
 		svc.Settings = make(map[string]string)
 		svc.Settings["nats-url"] = svc.Context.NatsUrl
+		svc.Settings["instance-id"] = svc.Context.Id
 		if err = svc.saveSettings(); err != nil {
 			log.Println("Failed to initialize settings:", err.Error())
 		}
@@ -110,6 +147,9 @@ func (svc *DdUsvc) loadSettings() error {
 			if url, ok := svc.Settings["nats-url"]; ok {
 				svc.Context.NatsUrl = url
 			}
+			if id, ok := svc.Settings["instance-id"]; ok {
+				svc.Context.Id = id
+			}
 
 			return nil
 		}
@@ -130,7 +170,7 @@ func (svc *DdUsvc) getSettings(nmsg *nats.Msg) {
 
 func (svc *DdUsvc) setSettings(nmsg *nats.Msg) {
 	// Unmarshal set request
-	var response StatusResponse
+	var response types.StatusResponse
 	request := &SetSettingsRequest{}
 	if err := json.Unmarshal(nmsg.Data, request); err == nil {
 		svc.Settings = request.Items
@@ -148,7 +188,7 @@ func (svc *DdUsvc) setSettings(nmsg *nats.Msg) {
 
 func (svc *DdUsvc) deleteSetting(nmsg *nats.Msg) {
 	// Unmarshal set request
-	var response StatusResponse
+	var response types.StatusResponse
 	request := &DeleteSettingRequest{}
 	if err := json.Unmarshal(nmsg.Data, request); err == nil {
 		if _, ok := svc.Settings[request.Item]; ok {

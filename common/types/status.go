@@ -1,4 +1,4 @@
-package ddsvc
+package types
 
 type StatusResponse struct {
 	Success       bool   `json:"success"`

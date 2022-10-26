@@ -91,8 +91,7 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 
 	if len(client.Tags()) == 0 {
 		logger.Log("error", "No tags to collect", fmt.Sprintf("Group: %s, progid: %s", group.Name, group.ProgID))
-		ddnats.Event("group.failed", group)
-		return
+		logger.Info("OPC group warning", "Group %s WARNING: no tags added successfully", group.Name)
 	}
 
 	// Initiate group running state
@@ -232,7 +231,7 @@ func StartGroup(group *OpcGroupItem) (err error) {
 	var tags []*OpcTagItem
 	db.DB.Find(&tags, "group_id = ?", group.ID)
 	if len(tags) <= 0 {
-		err = fmt.Errorf("Group does not have any tags defined, group: %s (id: %d)", group.Name, group.ID)
+		err = fmt.Errorf("Unable to find group, group: %s (id: %d)", group.Name, group.ID)
 		logger.Log("error", "OPC collection start failed", err.Error())
 		return
 	}

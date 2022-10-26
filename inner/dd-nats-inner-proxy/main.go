@@ -29,7 +29,7 @@ func main() {
 
 func runService(svc *ddsvc.DdUsvc) {
 
-	host := svc.Get("proxy-ip", "192.168.1.84")
+	host := svc.Get("proxy-ip", "192.168.2.101")
 	port := 4359
 	if err := connectUDP(host, port); err != nil {
 		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
@@ -41,18 +41,12 @@ func runService(svc *ddsvc.DdUsvc) {
 	// Set up UDP sender
 	go sendUDP()
 
-	topicstr := svc.Get("topics", "process.>,file.>, system.log.>, system.heartbeat")
+	topicstr := svc.Get("topics", "process.>,file.>,system.log.>,system.heartbeat")
 	topics := strings.Split(topicstr, ",")
 
 	for _, topic := range topics {
-		ddnats.Subscribe(topic, callbackHandler)
+		ddnats.Subscribe(strings.TrimSpace(topic), callbackHandler)
 	}
-
-	// // Set up subscription wildcard for messages that should be forwarded to the outer proxy
-	// ddnats.Subscribe("forward.>", callbackHandler)
-
-	// // Set up subscription for system hearbeat messages that should be forwarded to the outer proxy
-	// ddnats.Subscribe("system.heartbeat", callbackHandler)
 
 	// Sleep until interrupted
 	select {}

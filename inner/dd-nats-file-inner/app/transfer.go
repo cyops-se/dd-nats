@@ -36,7 +36,7 @@ func RunEngine(svc *ddsvc.DdUsvc) {
 	log.Println("Engine running ...")
 
 	// Watch folders for new data
-	ctx = initContext(".")
+	ctx = initContext(svc.Context.Wdir)
 	go monitorFilesystem(ctx)
 }
 
@@ -99,7 +99,7 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 	start := &types.FileTransferStart{Name: name, Path: dir, Size: info.Size, TransferStart: time.Now().UTC(), TransferId: id}
-	ddnats.Publish("forward.file.start", start)
+	ddnats.Publish("file.start", start)
 
 	hash := calcHash(filename)
 	hashvalue := hash.Sum(nil)
@@ -114,7 +114,7 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 	content := make([]byte, 256*1024)
 	n := 0
 	block := &types.FileTransferBlock{TransferId: id, BlockNo: 0, FileIndex: 0}
-	subject := fmt.Sprintf("forward.file.%s.block", id)
+	subject := fmt.Sprintf("file.%s.block", id)
 	errstr := ""
 
 	p := &progress{Size: uint64(info.Size), Index: block.FileIndex}
@@ -139,7 +139,7 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	file.Close()
 	end := types.FileTransferEnd{TransferId: id, TotalBlocks: block.BlockNo, TotalSize: block.FileIndex, Hash: hashvalue, Error: errstr}
-	ddnats.Publish("forward.file.end", end)
+	ddnats.Publish("file.end", end)
 
 	todir := path.Join(ctx.BaseDir, ctx.DoneDir, dir)
 	if err != nil && err != io.EOF {

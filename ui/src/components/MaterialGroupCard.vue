@@ -109,8 +109,9 @@
 
     methods: {
       startStop () {
+        if (!this.selected) return
         var action = this.copy.state >= 2 ? 'stop' : 'start'
-        var request = { subject: 'usvc.opc.groups.' + action, payload: { value: parseInt(this.group.id) } }
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.groups.' + action, payload: { value: parseInt(this.group.id) } }
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
@@ -126,7 +127,8 @@
       },
 
       refresh () {
-        var request = { subject: 'usvc.opc.groups.getbyid', payload: { value: parseInt(this.group.id) } }
+        if (!this.selected) return
+        var request = { subject: 'usvc.opc.' + this.selected.key + '.groups.getbyid', payload: { value: parseInt(this.group.id) } }
         ApiService.post('nats/request', request)
           .then(response => {
             this.copy = response.data.item

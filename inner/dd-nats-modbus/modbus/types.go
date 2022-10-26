@@ -1,8 +1,6 @@
 package modbus
 
-import (
-	"dd-nats/common/ddsvc"
-)
+import "dd-nats/common/types"
 
 // Common
 
@@ -36,16 +34,16 @@ type ModbusBulkItems struct {
 // Response
 
 type ModbusItemsResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Items []*ModbusItem `json:"items"`
 }
 
 type ModbusSlaveItemResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Item ModbusSlaveItem `json:"item"`
 }
 
 type ModbusSlaveItemsResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Items []*ModbusSlaveItem `json:"items"`
 }

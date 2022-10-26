@@ -1,6 +1,6 @@
 package messages
 
-import "dd-nats/common/ddsvc"
+import "dd-nats/common/types"
 
 type FolderInfo struct {
 	Name string `json:"name"`
@@ -8,6 +8,6 @@ type FolderInfo struct {
 }
 
 type FolderInfos struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Items []FolderInfo `json:"items"`
 }

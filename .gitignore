@@ -18,3 +18,13 @@ incoming
 *.db
 /svcs/dd-ui/web/static
 *.json
+/inner/dd-nats-file-inner/dd-nats-file-inner
+/inner/dd-nats-inner-proxy/dd-nats-inner-proxy
+/outer/dd-nats-file-outer/dd-nats-file-outer
+/outer/dd-nats-legacy-proxy/dd-nats-legacy-proxy
+/outer/dd-nats-outer-proxy/dd-nats-outer-proxy
+/outer/dd-nats-process-filter/dd-nats-process-filter
+/outer/dd-nats-rabbitmq/dd-nats-rabbitmq
+/outer/dd-nats-timescale/dd-nats-timescale
+/svcs/dd-logger/dd-logger
+/svcs/dd-ui/dd-ui

@@ -49,23 +49,6 @@ func main() {
 	}
 
 	log.Printf("Exiting ...")
-
-	// svcName := "dd-nats-file-outer"
-	// nc, err = ddnats.Connect(nats.DefaultURL)
-	// if err != nil {
-	// 	log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-	// 	return
-	// }
-
-	// c := ddsvc.ProcessArgs(svcName)
-	// if c == nil {
-	// 	return
-	// }
-
-	// go ddnats.SendHeartbeat(c.Name)
-	// ddsvc.RunService(c.Name, runEngine)
-
-	// log.Printf("Exiting ...")
 }
 
 func runEngine(svc *ddsvc.DdUsvc) {
@@ -73,9 +56,9 @@ func runEngine(svc *ddsvc.DdUsvc) {
 
 	// Listen for incoming files
 	ctx = initContext(".")
-	ddnats.Subscribe("inner.forward.file.start", fileStartHandler)
-	ddnats.Subscribe("inner.forward.file.*.block", fileBlockHandler)
-	ddnats.Subscribe("inner.forward.file.end", fileEndHandler)
+	ddnats.Subscribe("inner.file.start", fileStartHandler)
+	ddnats.Subscribe("inner.file.*.block", fileBlockHandler)
+	ddnats.Subscribe("inner.file.end", fileEndHandler)
 }
 
 func fileEndHandler(msg *nats.Msg) {
@@ -104,7 +87,7 @@ func fileBlockHandler(msg *nats.Msg) {
 
 	logger.Trace("File block", "Received block: %d, index: %d, size: %d", block.BlockNo, block.FileIndex, block.Size)
 	parts := strings.Split(msg.Subject, ".")
-	id := parts[3]
+	id := parts[2]
 	if entry, ok := register[id]; ok {
 		entry.block = block
 		_, err := entry.file.Write(block.Payload)
@@ -134,7 +117,7 @@ func fileStartHandler(msg *nats.Msg) {
 		register[start.TransferId] = entry
 	}
 
-	logger.Trace("File start", "Start receiving file: %s, size: %d", start.Name, start.Size)
+	logger.Trace("File start", "Start receiving file: %s, size: %d, id: %s", start.Name, start.Size, start.TransferId)
 	filepath := path.Join(ctx.basedir, ctx.processingdir, start.Path)
 	os.MkdirAll(filepath, 0755)
 	entry.file, err = os.Create(path.Join(filepath, entry.start.Name))

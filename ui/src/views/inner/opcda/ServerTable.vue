@@ -17,6 +17,9 @@
           vertical
         />
         <v-spacer />
+        <instance-selector
+          svcname="ddnatsopcda"
+        />
       </v-toolbar>
     </template>
     <template v-slot:item.actions="{ item }">
@@ -35,9 +38,12 @@
 </template>
 
 <script>
+  import { sync } from 'vuex-pathify'
   import ApiService from '@/services/api.service'
+  import InstanceSelector from '../../../components/app/InstanceSelector.vue'
   export default {
     name: 'ServerTableView',
+    components: { InstanceSelector },
 
     data: () => ({
       dialog: false,
@@ -67,59 +73,47 @@
       },
     }),
 
+    computed: {
+      ...sync('context', [
+        'selected',
+      ]),
+    },
+
+    watch: {
+      selected (news, olds) {
+        this.refresh()
+      },
+    },
+
     created () {
-      this.loading = true
-      var body = { subject: 'usvc.opc.servers.getall' }
-      ApiService.post('nats/request', body)
-        .then(response => {
-          this.items = response.data
-          this.loading = false
-        }).catch(response => {
-          console.log('ERROR response: ' + JSON.stringify(response))
-        })
+      this.refresh()
     },
 
     methods: {
       initialize () {},
+
+      refresh () {
+        this.items = []
+        if (!this.selected) return
+        this.loading = true
+        var body = { subject: 'usvc.opc.' + this.selected.key + '.servers.getall' }
+        ApiService.post('nats/request', body)
+          .then(response => {
+            this.items = response.data
+            this.loading = false
+          }).catch(response => {
+            console.log('ERROR response: ' + JSON.stringify(response))
+          })
+      },
+
       rowclick (item) {
         this.$router.push({ name: 'inner/opcda/TagBrowser', params: { serverid: item.id } })
-      },
-
-      editItem (item) {
-        this.editedIndex = this.items.indexOf(item)
-        this.editedItem = Object.assign({}, item)
-        this.dialog = true
-      },
-
-      close () {
-        this.dialog = false
-        this.$nextTick(() => {
-          this.editedItem = Object.assign({}, this.defaultItem)
-          this.editedIndex = -1
-        })
-      },
-
-      save () {
-        var kalle = this.editedItem
-        if (this.editedIndex > -1) {
-          Object.assign(this.items[this.editedIndex], this.editedItem)
-          ApiService.put('nats/request/usvc.opc.servers.getall', this.editedItem)
-            .then(response => {
-              this.$notification.success('User ' + response.data.fullname + ' successfully updated!')
-            }).catch(response => {
-              this.$notification.error('Failed to update user!' + response + ', ' + JSON.stringify(kalle))
-            })
-        } else {
-          this.items.push(this.editedItem)
-          ApiService.post('data/users', this.editedItem)
-            .then(response => {
-              this.$notification.success('User ' + response.data.fullname + ' successfully added!')
-            }).catch(response => {
-              this.$notification.error('Failed to add user!' + response + ', ' + JSON.stringify(kalle))
-            })
-        }
-        this.close()
       },
     },
   }
 </script>
+
+<style lang="sass">
+.instance-selector
+  width: 250px
+</style>

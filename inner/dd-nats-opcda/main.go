@@ -19,7 +19,7 @@ func main() {
 	svc := ddsvc.InitService("dd-nats-opcda")
 
 	if app.Init(svc) {
-		routes.RegisterRoutes()
+		routes.RegisterRoutes(svc)
 		svc.RunService(app.RunApp)
 	}
 

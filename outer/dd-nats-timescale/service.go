@@ -2,7 +2,6 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
-	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 	"encoding/json"
 
@@ -14,7 +13,7 @@ type updateMetaRequest struct {
 }
 
 type allMetaResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Items types.DataPointMetas `json:"items"`
 }
 
@@ -38,7 +37,7 @@ func getAllMeta(nmsg *nats.Msg) {
 }
 
 func updateAllMeta(nmsg *nats.Msg) {
-	response := &ddsvc.StatusResponse{Success: true}
+	response := &types.StatusResponse{Success: true}
 
 	var request updateMetaRequest
 	if err := json.Unmarshal(nmsg.Data, &request); err != nil {
@@ -55,7 +54,7 @@ func updateAllMeta(nmsg *nats.Msg) {
 }
 
 func deleteMeta(nmsg *nats.Msg) {
-	response := &ddsvc.StatusResponse{Success: true}
+	response := &types.StatusResponse{Success: true}
 
 	var request updateMetaRequest
 	if err := json.Unmarshal(nmsg.Data, &request); err != nil {

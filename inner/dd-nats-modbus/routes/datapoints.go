@@ -2,7 +2,7 @@ package routes
 
 import (
 	"dd-nats/common/ddnats"
-	"dd-nats/common/ddsvc"
+	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-modbus/modbus"
 	"encoding/json"
 
@@ -26,7 +26,7 @@ func getAllModbusItems(nmsg *nats.Msg) {
 }
 
 func addModbusItem(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -42,7 +42,7 @@ func addModbusItem(nmsg *nats.Msg) {
 }
 
 func updateModbusItem(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -59,7 +59,7 @@ func updateModbusItem(nmsg *nats.Msg) {
 }
 
 func deleteModbusItem(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false
@@ -75,7 +75,7 @@ func deleteModbusItem(nmsg *nats.Msg) {
 }
 
 func bulkChangeModbusItems(nmsg *nats.Msg) {
-	response := ddsvc.StatusResponse{Success: true}
+	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusBulkItems
 	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
 		response.Success = false

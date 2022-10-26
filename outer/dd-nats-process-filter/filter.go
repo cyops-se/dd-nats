@@ -2,7 +2,6 @@ package main
 
 import (
 	"dd-nats/common/ddnats"
-	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"encoding/json"
@@ -21,7 +20,7 @@ const (
 )
 
 type allMetaResponse struct {
-	ddsvc.StatusResponse
+	types.StatusResponse
 	Items types.DataPointMetas `json:"items"`
 }
 

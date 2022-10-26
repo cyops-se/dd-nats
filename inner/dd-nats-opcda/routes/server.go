@@ -2,6 +2,7 @@ package routes
 
 import (
 	"dd-nats/common/ddnats"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-opcda/messages"
@@ -25,13 +26,16 @@ var mutex sync.Mutex
 
 // Service routes
 
-func registerOpcRoutes() {
+func registerOpcRoutes(svc *ddsvc.DdUsvc) {
 	logger.Info("OPC DA", "Registering OPC DA routes")
 
 	// Server routes
-	ddnats.Subscribe("usvc.opc.servers.getall", getAllOpcServers)
-	ddnats.Subscribe("usvc.opc.servers.root", getOpcServerRoot)
-	ddnats.Subscribe("usvc.opc.servers.getbranch", getOpcServerBranch)
+	ddnats.Subscribe(svc.RouteName("opc", "servers.getall"), getAllOpcServers)
+	ddnats.Subscribe(svc.RouteName("opc", "servers.root"), getOpcServerRoot)
+	ddnats.Subscribe(svc.RouteName("opc", "servers.getbranch"), getOpcServerBranch)
+	// ddnats.Subscribe("usvc.opc.servers.getall", getAllOpcServers)
+	// ddnats.Subscribe("usvc.opc.servers.root", getOpcServerRoot)
+	// ddnats.Subscribe("usvc.opc.servers.getbranch", getOpcServerBranch)
 }
 
 func getAllOpcServers(msg *nats.Msg) {

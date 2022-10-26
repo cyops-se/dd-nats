@@ -42,6 +42,7 @@ func processArgs(svcName string) *types.Context {
 	flag.StringVar(&ctx.Name, "name", svcName, "Sets the name of the service")
 	flag.StringVar(&ctx.NatsUrl, "nats", "nats://localhost:4222", "URL to NATS service")
 	flag.IntVar(&ctx.Port, "port", 3000, "Port for HTTP user interface, if supported by service")
+	flag.StringVar(&ctx.Id, "id", "default", "Service instance identity. Important when running multiple instances of the same service")
 	flag.Parse()
 
 	return ctx
