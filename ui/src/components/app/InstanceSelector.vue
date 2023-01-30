@@ -10,6 +10,7 @@
       outlined
       dense
       hide-details
+      placeholder="select instance"
       @change="onchange"
     />
   </v-container>
@@ -47,6 +48,10 @@
     },
 
     created () {
+      this.refresh()
+      if (this.items && this.items.length > 0) {
+        this.selected = this.items[0]
+      }
     },
 
     mounted () {
@@ -58,11 +63,12 @@
         if (!this.services[this.svcname]) return
         this.items = []
         const keys = Object.keys(this.services[this.svcname])
-        keys.forEach(key => {
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i]
           if (this.services[this.svcname][key].alive) {
             this.items.push({ key: key, value: this.services[this.svcname][key] })
           }
-        })
+        }
 
         this.items.sort()
       },

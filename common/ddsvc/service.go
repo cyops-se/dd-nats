@@ -147,8 +147,12 @@ func (svc *DdUsvc) loadSettings() error {
 			if url, ok := svc.Settings["nats-url"]; ok {
 				svc.Context.NatsUrl = url
 			}
-			if id, ok := svc.Settings["instance-id"]; ok {
-				svc.Context.Id = id
+
+			//command line has precedence
+			if svc.Context.Id == "default" {
+				if id, ok := svc.Settings["instance-id"]; ok {
+					svc.Context.Id = id
+				}
 			}
 
 			return nil

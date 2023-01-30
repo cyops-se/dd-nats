@@ -1,12 +1,10 @@
 <template>
-  <usvc-settings usvc="ddnatsmodbus" />
+  <usvc-instance-settings usvc="ddnatsmodbus" />
 </template>
 
 <script>
-  import UsvcSettings from '../../../components/usvc/UsvcSettings.vue'
   export default {
     name: 'SettingsView',
-    components: { UsvcSettings },
 
     created () {
     },

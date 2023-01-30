@@ -1,12 +1,10 @@
 <template>
-  <usvc-settings usvc="ddnatsfileinner" />
+  <usvc-instance-settings usvc="ddnatsfileinner" />
 </template>
 
 <script>
-  import UsvcSettings from '../../../components/usvc/UsvcSettings.vue'
   export default {
     name: 'SettingsView',
-    components: { UsvcSettings },
 
     created () {
     },

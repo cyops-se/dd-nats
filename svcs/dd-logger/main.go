@@ -20,6 +20,7 @@ type logResponse struct {
 }
 
 var entries []types.Log
+var empty types.Log
 
 func main() {
 	if svc := ddsvc.InitService("dd-logger"); svc != nil {
@@ -46,10 +47,10 @@ func runEngine(svc *ddsvc.DdUsvc) {
 func logMessageHandler(nmsg *nats.Msg) {
 	var entry types.Log
 	if err := json.Unmarshal(nmsg.Data, &entry); err == nil {
-		// log.Printf("%s: %s, %s", entry.Category, entry.Title, entry.Description)
-		entries = append(entries, entry)
-		if len(entries) > 1000 {
-			entries = entries[:len(entries)-1]
+		entries = append(entries, entry) // enqueue new entry
+		for len(entries) > 1000 {
+			entries[0] = empty
+			entries = entries[1:] // dequeue all entries exceeding 1000
 		}
 	} else {
 		log.Println("Failed to unmarshal log entry:", err.Error())

@@ -73,6 +73,11 @@
             </v-card-actions>
           </v-card>
         </v-dialog>
+        <v-spacer />
+        <instance-selector
+          :svcname="usvc"
+          @change="refresh"
+        />
       </v-toolbar>
     </template>
     <template v-slot:item.actions="{ item }">
@@ -93,9 +98,10 @@
 </template>
 
 <script>
+  import { sync } from 'vuex-pathify'
   import ApiService from '@/services/api.service'
   export default {
-    name: 'UsvcSettings',
+    name: 'UsvcInstanceSettings',
 
     props: {
       usvc: String,
@@ -117,6 +123,12 @@
       editedItem: {},
     }),
 
+    computed: {
+      ...sync('context', [
+        'selected',
+      ]),
+    },
+
     created () {
     },
 
@@ -128,7 +140,7 @@
       initialize () {},
 
       refresh () {
-        var request = { subject: 'usvc.' + this.usvc + '.settings.get', payload: {} }
+        var request = { subject: 'usvc.' + this.usvc + '.' + this.selected.key + '.settings.get', payload: {} }
         ApiService.post('nats/request', request)
           .then(response => {
             this.items = []
@@ -150,7 +162,7 @@
       },
 
       deleteItem (item) {
-        var request = { subject: 'usvc.' + this.usvc + '.settings.delete', payload: { item: item.key } }
+        var request = { subject: 'usvc.' + this.usvc + '.' + this.selected.key + '.settings.delete', payload: { item: item.key } }
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
@@ -179,8 +191,7 @@
         var items = {}
         // eslint-disable-next-line no-return-assign
         this.items.forEach(o => items[o.key] = o.value)
-        if (items.password === '******') delete items.password
-        var request = { subject: 'usvc.' + this.usvc + '.settings.set', payload: { items: items } }
+        var request = { subject: 'usvc.' + this.usvc + '.' + this.selected.key + '.settings.set', payload: { items: items } }
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {

@@ -1,12 +1,10 @@
 <template>
-  <usvc-settings usvc="ddnatstimescale" />
+  <usvc-instance-settings usvc="ddnatstimescale" />
 </template>
 
 <script>
-  import UsvcSettings from '../../../components/usvc/UsvcSettings.vue'
   export default {
     name: 'SettingsView',
-    components: { UsvcSettings },
 
     created () {
     },

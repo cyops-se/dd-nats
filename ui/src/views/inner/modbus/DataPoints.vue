@@ -235,7 +235,6 @@
       },
 
       editItem (item) {
-        console.log('item: ' + JSON.stringify(item))
         this.editedIndex = this.items.indexOf(item)
         this.editedItem = Object.assign({}, item)
         this.editedItem.slavename = item.modbusslave.name
@@ -243,11 +242,9 @@
       },
 
       deleteItem (item) {
-        console.log('deleting item: ' + JSON.stringify(item))
         var request = { subject: 'usvc.modbus.items.delete', payload: { items: [item] } }
         ApiService.post('nats/request', request)
           .then(response => {
-            console.log('response: ' + JSON.stringify(response.data))
             for (var i = 0; i < this.items.length; i++) {
               if (this.items[i].id === item.id) this.items.splice(i, 1)
             }
@@ -304,12 +301,10 @@
         var reader = new FileReader()
         var t = this
         reader.onload = function (event) {
-          // console.log('file content loaded: ' + event.target.result)
           var j = t.csvJSON(event.target.result)
           t.content = j
           t.processResponse(j)
         }
-        console.log('loading file: ' + files[0].name)
         reader.readAsText(files[0])
       },
 
@@ -347,7 +342,6 @@
           var record = records[mi]
           // Required fields are tagname [0], ipaddress [3]
           if (typeof record[0] !== 'string' || typeof record[3] !== 'string' || record[0] === '' || record[0] === 'Värde' || record[3] === '') {
-            console.log('skipping record: ' + JSON.stringify(record))
             continue
           }
 
@@ -390,9 +384,7 @@
             break
           }
 
-          console.log('tag: ' + tagname + ', found: ' + found + ', ip: ' + ipaddress)
           if (!found) {
-            console.log('NEW tag: ' + tagname + ', found: ' + found)
             var newitem = { name: tagname, description: description, modbusaddress: modbusaddress, engunit: engunit, functioncode: functioncode, new: true, diff: 'new' }
             newitem.datatype = datatype
             newitem.datalength = datalength

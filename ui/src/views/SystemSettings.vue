@@ -1,12 +1,10 @@
 <template>
-  <usvc-settings usvc="ddui" />
+  <usvc-instance-settings usvc="ddui" />
 </template>
 
 <script>
-  import UsvcSettings from '@/components/usvc/UsvcSettings.vue'
   export default {
     name: 'SettingsView',
-    components: { UsvcSettings },
 
     created () {
     },
