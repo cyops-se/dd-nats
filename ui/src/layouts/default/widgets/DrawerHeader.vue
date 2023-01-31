@@ -16,7 +16,7 @@
         <strong class="mr-1 font-weight-black">DD</strong>
         <span class="accent--text">-CONSOLE</span>
       </v-list-item-title>
-      <span style="font-size: .7rem">{{ sysinfo.gitversion }}</span>
+      <span style="font-size: .7rem">{{ sysinfo.gitversion }} ({{ sysinfo.gitcommit }})</span>
       <span
         style="font-size: .7rem"
         class="mr-1 font-weight-black"

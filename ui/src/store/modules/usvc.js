@@ -22,6 +22,7 @@ const actions = {
   init: async ({ dispatch }) => {
     console.log('usvc/init')
 
+    // Collect usvc information
     WebsocketService.topic('system.heartbeat', this, function (topic, msg, t) {
       var name = msg.appname.replaceAll('-', '')
       if (!msg.identity || msg.identity === '') msg.identity = 'default'
@@ -47,13 +48,12 @@ const actions = {
           if (!state.services[p][i].lastseen || state.services[p][i].state === 'dead') continue
           var diff = Math.abs(now.getTime() - state.services[p][i].lastseen.getTime()) / 1000
 
-          if (diff > 4 && diff <= 8) {
-            state.services[p][i].state = 'stalling'
-            state.statechange = Date.now()
-          } else if (diff > 8) {
-            // console.log('service: ' + p + ', instance: ' + i + ', diff: ' + diff + ', now: ' + now + ', lastseen: ' + state.services[p][i].lastseen)
+          if (diff > 10) {
             state.services[p][i].state = 'dead'
             state.services[p][i].alive = false
+            state.statechange = Date.now()
+          } else if (diff > 5) {
+            state.services[p][i].state = 'stalling'
             state.statechange = Date.now()
           }
         }
@@ -68,8 +68,6 @@ const actions = {
         }
 
         state.services[p].alive = anyalive
-
-        // console.log('service ' + state.services[p].appname + ', state: ' + state.services[p].state)
       }
     }, 2000)
   },

@@ -28,6 +28,7 @@
 
     created () {
       WebsocketService.connect(this.onclose)
+      dispatch('app/init')
       dispatch('usvc/init')
     },
 

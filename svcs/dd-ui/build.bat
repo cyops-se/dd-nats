@@ -3,4 +3,4 @@ for /f "delims=" %%a in ('git rev-list --abbrev-commit -1 HEAD') do @set GIT_COM
 for /f "delims=" %%a in ('git describe --tags --dirty') do @set GIT_VERSION=%%a
 set goarch=amd64
 set cgo_enabled=0
-go build -ldflags "-X main.GitCommit=%GIT_COMMIT% -X main.GitVersion=%GIT_VERSION%"
+go build -ldflags "-X dd-nats/common/ddsvc.GitCommit=%GIT_COMMIT% -X dd-nats/common/ddsvc.GitVersion=%GIT_VERSION%"

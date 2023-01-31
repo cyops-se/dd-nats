@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+type SystemInformation struct {
+	GitVersion string `json:"gitversion"`
+	GitCommit  string `json:"gitcommit"`
+	BuildTime  string `json:"buildtime"`
+}
+
 type Model struct {
 	ID        uint         `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time    `json:"-"`

@@ -15,6 +15,8 @@ import (
 	"log"
 )
 
+var SysInfo types.SystemInformation
+
 func handlePanic() {
 	if r := recover(); r != nil {
 		// logger.Error("Windows service error", "Panic, recovery: %#v", r)
@@ -44,6 +46,14 @@ func processArgs(svcName string) *types.Context {
 	flag.IntVar(&ctx.Port, "port", 3000, "Port for HTTP user interface, if supported by service")
 	flag.StringVar(&ctx.Id, "id", "default", "Service instance identity. Important when running multiple instances of the same service")
 	flag.Parse()
+
+	SysInfo.GitVersion = GitVersion
+	SysInfo.GitCommit = GitCommit
+
+	if ctx.Version {
+		fmt.Printf("%s version %s, commit: %s, build time: %s\n", svcName, SysInfo.GitVersion, SysInfo.GitCommit, SysInfo.BuildTime)
+		return nil
+	}
 
 	return ctx
 }

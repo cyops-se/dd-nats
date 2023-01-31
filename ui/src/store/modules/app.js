@@ -1,5 +1,6 @@
 // Pathify
 import { make } from 'vuex-pathify'
+import ApiService from '@/services/api.service'
 
 // Data
 const state = {
@@ -16,6 +17,14 @@ const actions = {
   ...make.actions(state),
   init: async ({ dispatch }) => {
     console.log('app/init')
+
+    // Get system information
+    ApiService.get('system/sysinfo')
+      .then(response => {
+        state.sysinfo = response.data
+      }).catch(response => {
+        console.log('ERROR response: ' + JSON.stringify(response))
+      })
   },
 }
 

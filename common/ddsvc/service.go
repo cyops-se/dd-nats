@@ -40,6 +40,10 @@ type DeleteSettingResponse struct {
 	Items map[string]string `json:"items"`
 }
 
+var GitVersion string
+var GitCommit string
+var BuildTime string
+
 func InitService(name string) *DdUsvc {
 	if ctx := processArgs(name); ctx != nil {
 		svc := &DdUsvc{Name: name, Context: ctx}
@@ -66,10 +70,11 @@ func (svc *DdUsvc) RunService(engine func(*DdUsvc)) {
 func (svc *DdUsvc) SendHeartbeat() {
 	ticker := time.NewTicker(1 * time.Second)
 	hostname, _ := os.Hostname()
+	version := fmt.Sprintf("%s (%s)", SysInfo.GitVersion, SysInfo.GitCommit)
 
 	for {
 		<-ticker.C
-		heartbeat := &types.Heartbeat{Hostname: hostname, AppName: svc.Name, Version: "0.0.1", Timestamp: time.Now().UTC(), Identity: svc.Context.Id}
+		heartbeat := &types.Heartbeat{Hostname: hostname, AppName: svc.Name, Version: version, Timestamp: time.Now().UTC(), Identity: svc.Context.Id}
 		// payload, _ := json.Marshal(heartbeat)
 		ddnats.Publish("system.heartbeat", heartbeat)
 	}
