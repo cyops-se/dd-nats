@@ -215,11 +215,11 @@
     methods: {
       initialize () {},
 
-      refresh () {
-        if (!this.selected) return
+      async refresh () {
+        if (!(typeof this.selected === 'object')) return
         this.loading = true
         var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
-        ApiService.post('nats/request', request)
+        await ApiService.post('nats/request', request)
           .then(response => {
             this.items = response.data.items
           }).catch(response => {
@@ -227,7 +227,7 @@
           })
 
         request = { subject: 'usvc.opc.' + this.selected.key + '.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
-        ApiService.post('nats/request', request)
+        await ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
               this.groups = response.data.items

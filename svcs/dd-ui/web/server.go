@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -31,9 +30,18 @@ type WebSocketMessage struct {
 	Message interface{} `json:"message"`
 }
 
+type WebSocketClient struct {
+	connection *websocket.Conn
+	close      chan string
+}
+
 var dropList []int
 var ws []*websocket.Conn
 var wsMutex sync.Mutex
+var clients = make(map[*websocket.Conn]*WebSocketClient)
+var register = make(chan *WebSocketClient, 5)
+var unregister = make(chan *websocket.Conn, 50)
+var broadcast = make(chan *WebSocketMessage, 5)
 
 func handlePanic() {
 	if r := recover(); r != nil {
@@ -44,6 +52,8 @@ func handlePanic() {
 
 func RunWeb(args types.Context) {
 	defer handlePanic()
+
+	go runSocketActions()
 
 	// http.FS can be used to create a http Filesystem
 	subFS2, _ := fs.Sub(static, "static")
@@ -74,10 +84,11 @@ func RunWeb(args types.Context) {
 
 	// WebSocket registration
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		RegisterWebsocket(c)
-		for c.Conn != nil {
-			time.Sleep(1)
-		}
+		client := &WebSocketClient{c, make(chan string)}
+
+		register <- client
+		close := <-client.close
+		log.Println("websocket close signal recevied:", close)
 	}))
 
 	api := app.Group("/api")
@@ -85,28 +96,8 @@ func RunWeb(args types.Context) {
 	routes.RegisterNatsRoutes(api)
 	routes.RegisterFileTransferRoutes(api)
 
-	ddnats.Subscribe("stats.>", func(m *nats.Msg) {
-		NotifySubscribers(m.Subject, string(m.Data))
-	})
-
-	ddnats.Subscribe("ui.>", func(m *nats.Msg) {
-		NotifySubscribers(m.Subject, string(m.Data))
-	})
-
-	ddnats.Subscribe("system.>", func(m *nats.Msg) {
-		NotifySubscribers(m.Subject, string(m.Data))
-	})
-
-	ddnats.Subscribe("forward.>", func(m *nats.Msg) {
-		NotifySubscribers(m.Subject, string(m.Data))
-	})
-
-	ddnats.Subscribe("process.>", func(m *nats.Msg) {
-		NotifySubscribers(m.Subject, string(m.Data))
-	})
-
-	ddnats.Subscribe("inner.system.>", func(m *nats.Msg) {
-		NotifySubscribers(m.Subject, string(m.Data))
+	ddnats.Subscribe(">", func(m *nats.Msg) {
+		broadcast <- &WebSocketMessage{Topic: m.Subject, Message: string(m.Data)}
 	})
 
 	app.Listen(fmt.Sprintf(":%d", args.Port))
@@ -114,49 +105,26 @@ func RunWeb(args types.Context) {
 	select {}
 }
 
-func RegisterWebsocket(c *websocket.Conn) {
-	wsMutex.Lock()
-	defer wsMutex.Unlock()
-	ws = append(ws, c)
-	log.Printf("Adding subscriber: %d", len(ws)-1)
-	msg := &WebSocketMessage{Topic: "ws.meta", Message: "{\"msg\": \"Subscription registered\"}"}
-	c.WriteJSON(msg)
-}
+func runSocketActions() {
+	for {
+		select {
+		case client := <-register:
+			clients[client.connection] = client
+			log.Println("new websocket connection registered")
 
-func NotifySubscribers(topic string, message interface{}) {
-	wsMutex.Lock()
-	defer wsMutex.Unlock()
-	dropList = make([]int, 0)
-	for i, c := range ws {
-		if c == nil || c.Conn == nil {
-			dropList = append(dropList, i)
-			continue
+		case msg := <-broadcast:
+			for connection, client := range clients {
+				if err := connection.WriteJSON(msg); err != nil {
+					client.close <- "timetoexit"
+					unregister <- connection
+					connection.WriteMessage(websocket.CloseMessage, []byte{})
+					connection.Close()
+				}
+			}
+
+		case connection := <-unregister:
+			delete(clients, connection)
+			log.Println("websocket connection unregistered")
 		}
-
-		if err := c.WriteJSON(&WebSocketMessage{Topic: topic, Message: message}); err != nil {
-			// Remove connections that return an error
-			dropList = append(dropList, i)
-		}
-	}
-	dropSubscribers()
-}
-
-func dropSubscriber(i int) {
-	log.Printf("Removing subscriber: %d", i)
-	ws[i].Close()
-	ws[i].Conn = nil
-	ws[i] = ws[len(ws)-1]
-	ws[len(ws)-1] = nil
-	ws = ws[:len(ws)-1]
-}
-
-func dropSubscribers() {
-	if len(ws) == 0 || len(dropList) == 0 {
-		return
-	}
-
-	// Assume dropList is sorted in ascending order
-	for i := len(dropList) - 1; i >= 0; i-- {
-		dropSubscriber(dropList[i])
 	}
 }

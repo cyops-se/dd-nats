@@ -10,6 +10,7 @@ const WebsocketService = {
    * Set the default HTTP request headers
    */
   connect: function (onclose) {
+    console.log('web socket connect called')
     this.connection = new WebSocket(this.baseURL)
     this.connection.onmessage = this.onmessage
     this.connection.onopen = this.onopen

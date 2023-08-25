@@ -197,17 +197,17 @@
     },
 
     created () {
+      this.refresh()
     },
 
     mounted () {
-      this.refresh()
     },
 
     methods: {
       initialize () {},
 
       refresh () {
-        if (!this.selected) return
+        if (!(typeof this.selected === 'object')) return
         this.itemselected = true
         this.loading = true
         this.editedItem = Object.assign({}, this.defaultItem)

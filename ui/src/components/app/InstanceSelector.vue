@@ -49,13 +49,9 @@
 
     created () {
       this.refresh()
-      if (this.items && this.items.length > 0) {
-        this.selected = this.items[0]
-      }
     },
 
     mounted () {
-      this.refresh()
     },
 
     methods: {
@@ -71,6 +67,11 @@
         }
 
         this.items.sort()
+
+        if (this.items && this.items.length > 0 && !(typeof this.selected === 'object')) {
+          this.selected = this.items[0]
+          this.$emit('change')
+        }
       },
 
       onchange () {
