@@ -5,7 +5,7 @@
         <simple-info-card
           icon="mdi-clipboard-file-outline"
           color="primary"
-          :value="sysinfo.cacheinfo.count.toFixed(0)"
+          :value="info.count.toString()"
           title="Files in cache"
         />
       </v-col>
@@ -13,7 +13,7 @@
         <simple-info-card
           icon="mdi-harddisk"
           color="primary"
-          :value="sysinfo.cacheinfo.sizeinmb"
+          :value="info.sizeinmb"
           title="Total size in MB"
         />
       </v-col>
@@ -21,7 +21,7 @@
         <simple-info-card
           icon="mdi-clipboard-clock-outline"
           color="secondary"
-          :value="sysinfo.cacheinfo.firsttime.replace('T', ' ').replace('Z','')"
+          :value="info.firsttime.replace('T', ' ').replace('Z','')"
           title="First available time (UTC)"
         />
       </v-col>
@@ -29,7 +29,7 @@
         <simple-info-card
           icon="mdi-clipboard-clock-outline"
           color="secondary"
-          :value="sysinfo.cacheinfo.lasttime.replace('T', ' ').replace('Z','')"
+          :value="info.lasttime.replace('T', ' ').replace('Z','')"
           title="Last available time (UTC)"
         />
       </v-col>
@@ -43,7 +43,7 @@
           item-key="filename"
           :search="search"
           show-select
-          class="elevation-1"
+          class="elevation-1 text-no-wrap"
         >
           <template v-slot:top>
             <v-toolbar flat>
@@ -78,45 +78,83 @@
   </v-container>
 </template>
 
+<!-- template>
+  <v-data-table
+    :headers="headers"
+    :items="items"
+    class="elevation-1"
+  >
+    <template v-slot:top>
+      <v-toolbar flat>
+        <v-toolbar-title>Process history</v-toolbar-title>
+        <v-divider
+          class="mx-4"
+          inset
+          vertical
+        />
+        <v-spacer />
+      </v-toolbar>
+    </template>
+    <template v-slot:item.actions="{ item }">
+      <v-icon
+        class="mr-2"
+        @click="editItem(item)"
+      >
+        mdi-pencil
+      </v-icon>
+      <!- - v-icon @click="deleteItem(item)">
+        mdi-delete
+      </v-icon - ->
+    </template>
+  </v-data-table>
+</template -->
+
 <script>
-  import { sync } from 'vuex-pathify'
   import ApiService from '@/services/api.service'
   export default {
-    name: 'History',
+    name: 'ProcessHistory',
+
     data: () => ({
-      saveDisabled: false,
       search: '',
       loading: false,
       headers: [
-        { text: 'Time (UTC)', value: 'ptime', width: '20%' },
-        { text: 'Name', value: 'filename', width: '60%' },
-        { text: 'Size (bytes)', value: 'size', width: '20%' },
+        { text: 'Time (UTC)', value: 'time', width: '110px' },
+        { text: 'Filename', value: 'filename', width: '90%' },
+        { text: 'Size', value: 'size', width: '110px' },
       ],
+      info: { count: '', sizeinmb: '', firsttime: '', lasttime: '' },
       items: [],
       selected: [],
       selecteditems: [],
     }),
 
-    computed: {
-      ...sync('app', ['sysinfo']),
-    },
-
     created () {
-      ApiService.get('system/info')
-        .then((response) => {
-          this.sysinfo = response.data
-          this.items = this.sysinfo.cacheinfo.items
-          this.sysinfo.cacheinfo.sizeinmb = (this.sysinfo.cacheinfo.size / (1024 * 1024)).toFixed(2)
-          if (this.items) {
-            this.items.forEach((item) => { item.ptime = item.time.replace('T', ' ').replace('Z', '') })
-          }
-        })
-        .catch((e) => {
-          console.log('ERROR response: ' + JSON.stringify(e.message))
-        })
+      this.refresh()
     },
 
     methods: {
+      initialize () {},
+
+      refresh () {
+        this.loading = true
+        var request = { subject: 'usvc.cache.getall', payload: {} }
+        ApiService.post('nats/request', request)
+          .then((response) => {
+            // console.log('response: ' + JSON.stringify(response))
+            this.info = response.data.info
+            this.info.sizeinmb = (this.info.size / (1024 * 1024)).toFixed(2)
+
+            this.items = this.info.items
+            for (var i = 0; i < this.items.length; i++) {
+              this.items[i].time = this.items[i].time.replace('T', ' ').replace('Z', '')
+            }
+            this.loading = false
+          })
+          .catch((e) => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
+          })
+      },
+
       resend () {
         ApiService.post('system/resend', this.selected)
           .then((response) => {

@@ -158,8 +158,8 @@
             this.items = items
             this.loading = false
           })
-          .catch((response) => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+          .catch((e) => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
 
@@ -183,9 +183,9 @@
               this.$notification.error('Failed to delete Modbus slave: ' + response.message)
             }
           })
-          .catch((response) => {
-            console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to delete Modbus slave: ' + response.message)
+          .catch((e) => {
+            console.log('ERROR response: ' + e.message)
+            this.$notification.error('Failed to delete Modbus slave: ' + e.message)
           })
       },
 

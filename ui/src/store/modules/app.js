@@ -22,8 +22,8 @@ const actions = {
     ApiService.get('system/sysinfo')
       .then(response => {
         state.sysinfo = response.data
-      }).catch(response => {
-        console.log('ERROR response: ' + JSON.stringify(response))
+      }).catch(e => {
+        console.log('ERROR response: ' + JSON.stringify(e.message))
       })
   },
 }

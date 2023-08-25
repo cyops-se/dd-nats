@@ -26,6 +26,12 @@ type FileInfo struct {
 	Path string    `json:"path"`
 	Size int       `json:"size"`
 	Date time.Time `json:"time"`
+	Hash []byte    `json:"hash"`
+}
+
+type FileManifest struct {
+	LastUpdate time.Time  `json:"lastupdate"`
+	Files      []FileInfo `json:"files"`
 }
 
 type FileTransferStart struct {

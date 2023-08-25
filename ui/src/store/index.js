@@ -17,9 +17,6 @@ const store = new Vuex.Store({
 })
 
 ApiService.init()
-// store.dispatch('app/init')
-// store.dispatch('usvc/init')
-// store.dispatch('user/refresh')
 
 export default store
 

@@ -235,9 +235,9 @@
               this.availableProgids.push(response.data[i].progid)
             }
             this.loading = false
-          }).catch(response => {
-            console.log('ERROR response: ' + JSON.stringify(response))
-            this.$notification.error('Failed to get servers: ' + response.message)
+          }).catch(e => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
+            this.$notification.error('Failed to get servers: ' + e.message)
           })
       },
 

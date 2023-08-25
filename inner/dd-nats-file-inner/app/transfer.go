@@ -25,6 +25,7 @@ type context struct {
 }
 
 type progress struct {
+	Name    string  `json:"name"`
 	Size    uint64  `json:"size"`
 	Index   uint64  `json:"index"`
 	Percent float64 `json:"percent"`
@@ -38,6 +39,7 @@ func RunEngine(svc *ddsvc.DdUsvc) {
 	// Watch folders for new data
 	ctx = initContext(svc.Context.Wdir)
 	go monitorFilesystem(ctx)
+	go createManifest(ctx)
 }
 
 func Context() *context {
@@ -114,10 +116,10 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 	content := make([]byte, 256*1024)
 	n := 0
 	block := &types.FileTransferBlock{TransferId: id, BlockNo: 0, FileIndex: 0}
-	subject := fmt.Sprintf("file.%s.block", id)
+	subject := fmt.Sprintf("file.block.%s", id)
 	errstr := ""
 
-	p := &progress{Size: uint64(info.Size), Index: block.FileIndex}
+	p := &progress{Name: filename, Size: uint64(info.Size), Index: block.FileIndex}
 	for err == nil {
 		// each message starts with a 4 byte sequence number, then 4 bytes of size of payload, then payload
 		n, err = file.Read(content)
@@ -151,7 +153,7 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	movename := path.Join(todir, name)
 	if err = os.Rename(filename, movename); err == nil {
-		logger.Trace("File transfer complete", "File %s, size %d transferred, err: %s", filename, info.Size, errstr)
+		logger.Trace("File transfer complete", "File %s, size %d transferred", filename, info.Size)
 	} else {
 		logger.Error("Failed to move file", "Error when attempting to move file after file was transferred, file %s, size %d, error %s", filename, info.Size, err.Error())
 	}

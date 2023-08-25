@@ -101,8 +101,8 @@
           .then(response => {
             this.items = response.data
             this.loading = false
-          }).catch(response => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+          }).catch(e => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
 

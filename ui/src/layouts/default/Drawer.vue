@@ -157,7 +157,6 @@
         {
           icon: 'mdi-speedometer',
           text: 'Modbus',
-          to: '/pages/servers',
           usvc: 'ddnatsmodbus',
           sublinks: [
             {
@@ -180,8 +179,19 @@
         {
           icon: 'mdi-history',
           text: 'Process cache',
-          to: '/pages/cache',
           usvc: 'ddnatscache',
+          sublinks: [
+            {
+              icon: 'mdi-transfer',
+              text: 'History',
+              to: '/pages/cache/history',
+            },
+            {
+              icon: 'mdi-cog',
+              text: 'Settings',
+              to: '/pages/cache/settings',
+            },
+          ],
         },
         {
           icon: 'mdi-transfer',

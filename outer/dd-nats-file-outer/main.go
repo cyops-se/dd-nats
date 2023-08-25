@@ -10,7 +10,6 @@ import (
 	"hash"
 	"io"
 	"log"
-	"net"
 	"os"
 	"path"
 	"strings"
@@ -18,9 +17,6 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-var forwarder chan *nats.Msg = make(chan *nats.Msg, 2000)
-var udpconn net.Conn
-var nc *nats.Conn
 var ctx *context
 var err error
 
@@ -57,7 +53,7 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	// Listen for incoming files
 	ctx = initContext(".")
 	ddnats.Subscribe("inner.file.start", fileStartHandler)
-	ddnats.Subscribe("inner.file.*.block", fileBlockHandler)
+	ddnats.Subscribe("inner.file.block.*", fileBlockHandler)
 	ddnats.Subscribe("inner.file.end", fileEndHandler)
 }
 
@@ -67,13 +63,12 @@ func fileEndHandler(msg *nats.Msg) {
 		logger.Error("File start", "Failed to unmarshal file end message: %s", err.Error())
 		return
 	}
+
 	logger.Trace("File end", "End receiving file id: %s", end.TransferId)
 
 	if entry, ok := register[end.TransferId]; ok {
 		if entry.block.FileIndex == uint64(entry.start.Size) {
-			logger.Trace("File complete", "Closing file handle for id: %s", entry.start.TransferId)
-			entry.file.Close()
-			delete(register, end.TransferId)
+			fileComplete(entry)
 		}
 	}
 }
@@ -85,20 +80,19 @@ func fileBlockHandler(msg *nats.Msg) {
 		return
 	}
 
-	logger.Trace("File block", "Received block: %d, index: %d, size: %d", block.BlockNo, block.FileIndex, block.Size)
+	logger.Trace("File block", "Transfer id %s, received block: %d, index: %d, size: %d", block.TransferId, block.BlockNo, block.FileIndex, block.Size)
 	parts := strings.Split(msg.Subject, ".")
-	id := parts[2]
+	id := parts[3] // block id comes last "file.block.[blockid]"
 	if entry, ok := register[id]; ok {
 		entry.block = block
 		_, err := entry.file.Write(block.Payload)
 		if err != nil {
 			logger.Error("Failed to receive file", "Error writing file, err: %s", err.Error())
+			fileFail(entry)
 		}
 
 		if entry.block.FileIndex == uint64(entry.start.Size) {
-			logger.Trace("File complete", "Closing file handle for id: %s", entry.start.TransferId)
-			entry.file.Close()
-			delete(register, block.TransferId)
+			fileComplete(entry)
 		}
 	}
 }
@@ -123,6 +117,35 @@ func fileStartHandler(msg *nats.Msg) {
 	entry.file, err = os.Create(path.Join(filepath, entry.start.Name))
 }
 
+func fileComplete(entry *transferInfo) {
+	logger.Trace("File complete", "Closing file handle for id: %s, name: %s", entry.start.TransferId, entry.start.Name)
+	entry.file.Close()
+	delete(register, entry.block.TransferId)
+
+	fromfile := path.Join(ctx.basedir, ctx.processingdir, entry.start.Path, entry.start.Name)
+	topath := path.Join(ctx.basedir, ctx.donedir, entry.start.Path)
+	os.MkdirAll(topath, 0755)
+	tofile := path.Join(topath, entry.start.Name)
+	if err := os.Rename(fromfile, tofile); err != nil {
+		logger.Error("File complete", "Failed to move file: %s to done directory: %s, error: %s", fromfile, tofile, err.Error())
+	}
+}
+
+func fileFail(entry *transferInfo) {
+	logger.Trace("File transfer failed", "Closing file handle for id: %s, name: %s", entry.start.TransferId, entry.start.Name)
+	entry.file.Close()
+	delete(register, entry.block.TransferId)
+
+	fromfile := path.Join(ctx.basedir, ctx.processingdir, entry.start.Path, entry.start.Name)
+	topath := path.Join(ctx.basedir, ctx.faildir, entry.start.Path)
+	os.MkdirAll(topath, 0755)
+	tofile := path.Join(topath, entry.start.Name)
+
+	if err := os.Rename(fromfile, tofile); err != nil {
+		logger.Error("File complete", "Failed to move file: %s to fail directory: %s, error: %s", fromfile, tofile, err.Error())
+	}
+}
+
 func calcHash(filename string) hash.Hash {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -143,5 +166,6 @@ func initContext(wdir string) *context {
 	os.MkdirAll(path.Join(ctx.basedir, ctx.processingdir), 0755)
 	os.MkdirAll(path.Join(ctx.basedir, ctx.donedir), 0755)
 	os.MkdirAll(path.Join(ctx.basedir, ctx.faildir), 0755)
+	go createManifest(ctx)
 	return ctx
 }

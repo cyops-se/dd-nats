@@ -59,9 +59,9 @@
                 i.time = i.time.replace('T', ' ').replace('Z', '').substring(0, 19)
               }
             }
-          }).catch(response => {
-            console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to get groups: ' + response.message)
+          }).catch(e => {
+            console.log('ERROR response: ' + e.message)
+            this.$notification.error('Failed to get groups: ' + e.message)
           })
       },
 
@@ -70,8 +70,8 @@
           .then(response => {
             this.$notification.success('Log entries cleared!')
             this.refresh()
-          }).catch(response => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+          }).catch(e => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
     },

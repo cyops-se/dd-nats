@@ -23,7 +23,7 @@ func main() {
 
 func runEngine(svc *ddsvc.DdUsvc) {
 	port, _ := strconv.Atoi(svc.Get("port", "4359"))
-	if err := listenUDP(port); err != nil {
+	if err := listenUDP(svc, port); err != nil {
 		log.Printf("Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
 	}
@@ -31,10 +31,10 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	prefix := svc.Get("prefix", "inner.")
 
 	// Start receiving UDP messages
-	go readUDP(prefix)
+	go readUDP(svc, prefix)
 }
 
-func listenUDP(port int) (err error) {
+func listenUDP(svc *ddsvc.DdUsvc, port int) (err error) {
 	addr := net.UDPAddr{
 		Port: port,
 		IP:   net.ParseIP("0.0.0.0"),
@@ -49,7 +49,7 @@ func listenUDP(port int) (err error) {
 	return nil
 }
 
-func readUDP(prefix string) {
+func readUDP(svc *ddsvc.DdUsvc, prefix string) {
 	packetsize := 1200
 	packet := make([]byte, packetsize)
 	count := 0
@@ -111,9 +111,11 @@ func readUDP(prefix string) {
 		ddnats.PublishData(prefix+subject, mdata)
 
 		count++
-		total += uint64(time.Now().UnixNano()) - uint64(start)
-		if count%100 == 0 {
-			log.Printf("One message takes %f nanoseconds in average", float64(total)/float64(count))
+		if svc.Context.Trace {
+			total += uint64(time.Now().UnixNano()) - uint64(start)
+			if count%100 == 0 {
+				log.Printf("One message takes %f nanoseconds in average", float64(total)/float64(count))
+			}
 		}
 	}
 }

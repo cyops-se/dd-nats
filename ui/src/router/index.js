@@ -36,7 +36,8 @@ const router = new Router({
       route('inner/filetransfer/File Transfer', null, 'pages/innerfile/transfer'),
       route('inner/filetransfer/Settings', null, 'pages/innerfile/settings'),
       route('inner/proxy/Settings', null, 'pages/innerproxy/settings'),
-      route('History', null, 'pages/process/cache'),
+      route('inner/cache/History', null, 'pages/cache/history'),
+      route('inner/cache/Settings', null, 'pages/cache/settings'),
 
       // Outer views
       route('outer/proxy/Settings', null, 'pages/outerproxy/settings'),

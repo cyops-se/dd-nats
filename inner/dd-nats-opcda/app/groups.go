@@ -150,7 +150,7 @@ func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
 		group.LastRun = time.Now()
 		group.Counter = group.Counter + uint64(len(items))
 
-		db.DB.Model(&group).Updates(OpcGroupItem{LastRun: group.LastRun, Counter: group.Counter})
+		// db.DB.Model(&group).Updates(OpcGroupItem{LastRun: group.LastRun, Counter: group.Counter})
 		ddnats.Event(fmt.Sprintf("group.%d.updated", group.ID), group)
 
 		<-timer.C

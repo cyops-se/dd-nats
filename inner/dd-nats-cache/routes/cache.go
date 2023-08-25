@@ -13,15 +13,8 @@ func RegisterRoutes() {
 }
 
 func getAllCaches(nmsg *nats.Msg) {
-	app.RefreshCache()
-	// var err error
 	var response messages.CacheResponse
-	response.Success = false
-	response.StatusMessage = "Not yet implemented"
-	// if response.Items, err = app.GetGroups(); err != nil {
-	// 	response.Success = false
-	// 	response.StatusMessage = err.Error()
-	// }
-
+	response.Success = true
+	response.Info = app.GetCacheInfo()
 	ddnats.Respond(nmsg, response)
 }

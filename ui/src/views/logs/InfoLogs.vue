@@ -51,8 +51,8 @@
           .then(response => {
             this.$notification.success('Log entries cleared!')
             this.refresh()
-          }).catch(response => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+          }).catch(e => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
     },

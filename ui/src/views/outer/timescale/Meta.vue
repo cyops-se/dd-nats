@@ -196,8 +196,8 @@
               console.log('ERROR response: ' + JSON.stringify(response.data))
             }
           })
-          .catch((response) => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+          .catch((e) => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
 
@@ -219,8 +219,8 @@
               console.log('ERROR response: ' + JSON.stringify(response.data))
             }
           })
-          .catch((response) => {
-            console.log('ERROR response: ' + JSON.stringify(response))
+          .catch((e) => {
+            console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
 
