@@ -38,6 +38,7 @@ type filteredPoint struct {
 	Deadband      float64         `json:"deadband"` // Percentage of max-min
 	Min           float64         `json:"min"`      // Retrieved from Meta service (for example dd-nats-timescale-meta)
 	Max           float64         `json:"max"`      // Retrieved from Meta service (for example dd-nats-timescale-meta)
+	LastTime      time.Time       `json:"-"`
 }
 
 var datapoints map[string]*filteredPoint
@@ -90,25 +91,31 @@ func processDataPointHandler(nmsg *nats.Msg) {
 
 		fp.DataPoint = dp
 
-		ddnats.Publish("process.actual", dp)
-		if fp.FilterType == FilterTypeNone {
-			fp.PreviousValue = dp.Value
-			ddnats.Publish("process.filtered", dp)
-		} else if fp.FilterType == FilterTypeInterval {
-			if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
-				ddnats.Publish("process.filtered", dp)
-				fp.PreviousTime = time.Now()
+		// No more often than once a second regardless
+		if time.Since(fp.LastTime) > time.Second*time.Duration(1) {
+			ddnats.Publish("process.actual", dp)
+			fp.LastTime = time.Now()
+
+			if fp.FilterType == FilterTypeNone {
 				fp.PreviousValue = dp.Value
-			}
-		} else if fp.FilterType == FilterTypeDeadband {
-			fp.Integrator += dp.Value - fp.PreviousValue
-			if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
 				ddnats.Publish("process.filtered", dp)
-				fp.Integrator = 0
-				fp.PreviousValue = dp.Value
+			} else if fp.FilterType == FilterTypeInterval {
+				if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
+					ddnats.Publish("process.filtered", dp)
+					fp.PreviousTime = time.Now()
+				}
+			} else if fp.FilterType == FilterTypeDeadband {
+				fp.Integrator += dp.Value - fp.PreviousValue
+				if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
+					ddnats.Publish("process.filtered", dp)
+					fp.Integrator = 0
+					fp.PreviousValue = dp.Value
+				}
 			}
+
+			ddnats.Publish("process.filtermeta", fp)
 		}
-		ddnats.Publish("process.filtermeta", fp)
+
 	} else {
 		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
 	}

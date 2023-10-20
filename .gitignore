@@ -28,3 +28,4 @@ incoming
 /outer/dd-nats-timescale/dd-nats-timescale
 /svcs/dd-logger/dd-logger
 /svcs/dd-ui/dd-ui
+*.gz

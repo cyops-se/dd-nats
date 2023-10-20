@@ -24,7 +24,8 @@ const actions = {
 
     // Collect usvc information
     WebsocketService.topic('system.heartbeat', this, function (topic, msg, t) {
-      var name = msg.appname.replaceAll('-', '')
+      var name = msg.appname.replace(/-/g, '')
+      // console.log('name: ' + name + ', type: ' + typeof name)
       if (!msg.identity || msg.identity === '') msg.identity = 'default'
       if (!state.services[name]) state.services[name] = {}
       var prevstate = state.services[name] && state.services[name][msg.identity] ? state.services[name][msg.identity].state : 'unknown'

@@ -95,7 +95,7 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 	}
 
 	if fi.Size() == 0 {
-		logger.Error("Filetransfer", "'filename' is empty:", filename)
+		logger.Error("Filetransfer", "'filename' is empty: %s", filename)
 		return fmt.Errorf("empty file")
 	}
 

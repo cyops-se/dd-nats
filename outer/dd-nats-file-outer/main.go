@@ -30,10 +30,11 @@ type context struct {
 }
 
 type transferInfo struct {
-	start types.FileTransferStart
-	block types.FileTransferBlock
-	end   types.FileTransferEnd
-	file  *os.File
+	start  types.FileTransferStart
+	block  types.FileTransferBlock
+	end    types.FileTransferEnd
+	file   *os.File
+	failed bool
 }
 
 var register map[string]*transferInfo
@@ -60,14 +61,14 @@ func runEngine(svc *ddsvc.DdUsvc) {
 func fileEndHandler(msg *nats.Msg) {
 	var end types.FileTransferEnd
 	if err := json.Unmarshal(msg.Data, &end); err != nil {
-		logger.Error("File start", "Failed to unmarshal file end message: %s", err.Error())
+		logger.Error("File end", "Failed to unmarshal file end message: %s", err.Error())
 		return
 	}
 
 	logger.Trace("File end", "End receiving file id: %s", end.TransferId)
 
 	if entry, ok := register[end.TransferId]; ok {
-		if entry.block.FileIndex == uint64(entry.start.Size) {
+		if !entry.failed && entry.block.FileIndex == uint64(entry.start.Size) {
 			fileComplete(entry)
 		}
 	}
@@ -76,14 +77,28 @@ func fileEndHandler(msg *nats.Msg) {
 func fileBlockHandler(msg *nats.Msg) {
 	var block types.FileTransferBlock
 	if err := json.Unmarshal(msg.Data, &block); err != nil {
-		logger.Error("File start", "Failed to unmarshal file block message: %s", err.Error())
+		logger.Error("File block", "Failed to unmarshal file block message: %s", err.Error())
+		logger.Trace("File block", "%s", string(msg.Data))
 		return
 	}
 
-	logger.Trace("File block", "Transfer id %s, received block: %d, index: %d, size: %d", block.TransferId, block.BlockNo, block.FileIndex, block.Size)
 	parts := strings.Split(msg.Subject, ".")
 	id := parts[3] // block id comes last "file.block.[blockid]"
 	if entry, ok := register[id]; ok {
+		if entry.failed {
+			delete(register, id)
+			printEntryn()
+			return
+		}
+
+		logger.Trace("File block", "Transfer id %s, received block: %d, index: %d, size: %d", block.TransferId, block.BlockNo, block.FileIndex, block.Size)
+
+		if block.BlockNo > 0 && block.BlockNo != entry.block.BlockNo+1 {
+			logger.Error("Failed to receive file", "Missing block, got %d, wanted %d", block.BlockNo, entry.block.BlockNo+1)
+			fileFail(entry)
+			return
+		}
+
 		entry.block = block
 		_, err := entry.file.Write(block.Payload)
 		if err != nil {
@@ -133,6 +148,7 @@ func fileComplete(entry *transferInfo) {
 
 func fileFail(entry *transferInfo) {
 	logger.Trace("File transfer failed", "Closing file handle for id: %s, name: %s", entry.start.TransferId, entry.start.Name)
+	entry.failed = true
 	entry.file.Close()
 	delete(register, entry.block.TransferId)
 
@@ -143,6 +159,13 @@ func fileFail(entry *transferInfo) {
 
 	if err := os.Rename(fromfile, tofile); err != nil {
 		logger.Error("File complete", "Failed to move file: %s to fail directory: %s, error: %s", fromfile, tofile, err.Error())
+	}
+}
+
+func printEntryn() {
+	logger.Trace("Filer register", "Printing entry")
+	for k, v := range register {
+		logger.Trace("File register", "Key: %s, Name: %s", k, v.file.Name())
 	}
 }
 

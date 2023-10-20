@@ -3,7 +3,6 @@ package main
 import (
 	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/types"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -63,50 +62,65 @@ func callbackHandler(msg *nats.Msg) {
 	forwarder <- msg
 }
 
+// packet layout
+// | uint32 | uint32 | uint32 | uint32 | uint32 | [subjectsize]byte | uint32 | [packetsize]byte    |
+// |--------|--------|--------|--------|--------|-------------------|--------|---------------------|
+// | msgid  | total  | total  | packet | subject| subject...        | payload| payload fragment... |
+// |        | size   | packets| no     | size   | (packetno = 0)    | size   |                     |
+
 func sendUDP() {
-	totmsgs := uint64(0)
-	totpkts := uint64(0)
-	counter := uint32(0)
-	packet = make([]byte, 1200)
+	msgid := uint32(0)
+	packetlen := 1480
+	packet = make([]byte, packetlen)
+	packetcount := uint64(0)
+	interval := uint64(20) // number of packets before a break
+	delay := 50            // in millisec
 
 	for {
 		msg := <-forwarder
-		sdata := []byte(msg.Subject)
-
-		copy(packet, []byte("$MAGIC8$"))
-		binary.LittleEndian.PutUint32(packet[8:], counter)
-		binary.LittleEndian.PutUint32(packet[12:], uint32(len(sdata)))
-		binary.LittleEndian.PutUint32(packet[16:], uint32(len(msg.Data)))
-		copy(packet[20:], sdata)
-		udpconn.Write(packet[:len(sdata)+20])
-		counter++
-		totpkts++
-
-		index := 0
-		packetsize := cap(packet) - 8
+		msgid++
+		sdata := []byte(msg.Subject) // full subject payload
+		ssize := len(sdata)
 		remainingsize := len(msg.Data)
-		for remainingsize > 0 {
-			if remainingsize < packetsize {
-				packetsize = remainingsize
-			}
 
-			binary.LittleEndian.PutUint32(packet, uint32(counter))
-			binary.LittleEndian.PutUint32(packet[4:], uint32(packetsize))
-			copy(packet[8:], msg.Data[index:packetsize+index])
-			udpconn.Write(packet[:packetsize+8])
-			counter++
-			totpkts++
-
-			remainingsize -= packetsize
-			index += packetsize
-			if counter%25 == 0 {
-				time.Sleep(1 * time.Millisecond)
-			}
+		totalsize := len(msg.Data)
+		totalpackets := (totalsize + ssize) / (packetlen - 24) // overhead is 24 bytes
+		if totalsize%packetlen != 0 {
+			totalpackets++
 		}
 
-		totmsgs++
+		packetno := 0
+		index := 0 // current position in the full message payload buffer
 
-		stats := &types.UdpStatistics{TotalMsg: totmsgs, TotalPkts: totpkts}
-		ddnats.Publish("stats.nats.totmsgs", stats)
+		for packetno < totalpackets {
+			headersize := 4*5 + ssize
+			binary.LittleEndian.PutUint32(packet, uint32(msgid))
+			binary.LittleEndian.PutUint32(packet[4:], uint32(totalsize))
+			binary.LittleEndian.PutUint32(packet[8:], uint32(totalpackets))
+			binary.LittleEndian.PutUint32(packet[12:], uint32(packetno))
+			binary.LittleEndian.PutUint32(packet[16:], uint32(ssize))
+			copy(packet[20:], sdata)
+
+			remainingspace := packetlen - headersize
+			payloadsize := remainingsize
+
+			if payloadsize > remainingspace {
+				payloadsize = remainingspace - 4 // include the payload size slot
+			}
+
+			binary.LittleEndian.PutUint32(packet[headersize:], uint32(payloadsize))
+			copy(packet[headersize+4:], msg.Data[index:payloadsize+index])
+			udpconn.Write(packet[:headersize+4+payloadsize])
+			ssize = 0
+
+			remainingsize -= payloadsize
+			index += payloadsize
+			packetno++
+
+			packetcount++
+			if packetcount%interval == 0 {
+				time.Sleep(time.Duration(delay) * time.Millisecond)
+			}
+		}
 	}
 }

@@ -23,7 +23,8 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	registerFilterRoutes()
 
 	// Listen for incoming process data from the inside
-	ddnats.Subscribe("inner.process.actual", processDataPointHandler)
+	topic := svc.Get("topic", "inner.process.actual")
+	ddnats.Subscribe(topic, processDataPointHandler)
 
 	// Listen for changes to meta data
 	ddnats.Subscribe("system.event.timescale.metaupdated", processMetaUpdate)
