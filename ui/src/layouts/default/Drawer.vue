@@ -269,6 +269,23 @@
           ],
         },
         {
+          icon: 'mdi-transfer',
+          text: 'File Transfer',
+          usvc: 'ddnatsfileouter',
+          sublinks: [
+            {
+              icon: 'mdi-transfer',
+              text: 'Transfer status',
+              to: '/pages/outerfile/transfer',
+            },
+            {
+              icon: 'mdi-cog',
+              text: 'Settings',
+              to: '/pages/outerfile/settings',
+            },
+          ],
+        },
+        {
           icon: 'mdi-view-list',
           to: '/tables/logs',
           text: 'System logs',

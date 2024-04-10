@@ -45,6 +45,8 @@ const router = new Router({
       route('outer/timescale/Settings', null, 'pages/timescale/settings'),
       route('outer/filter/FilteredPoints', null, 'pages/outerfilter/filteredpoints'),
       route('outer/filter/Settings', null, 'pages/outerfilter/settings'),
+      route('outer/filetransfer/File Transfer', null, 'pages/outerfile/transfer'),
+      route('outer/filetransfer/Settings', null, 'pages/outerfile/settings'),
 
       // General
       route('System Settings', null, 'pages/systemsettings'),
