@@ -21,7 +21,7 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	logger.Info("Microservices", "RabbitMQ microservice running")
 	emitter.ChannelName = "hello"
 	emitter.Durable = true
-	emitter.Urls = []string{"amqp://admin:hemligt@192.168.1.65:5672/"}
+	emitter.Urls = []string{"amqp://user:password@127.0.0.1:5672/"}
 	emitter.InitEmitter()
 
 	// Listen for incoming process data

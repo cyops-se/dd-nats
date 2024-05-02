@@ -16,11 +16,11 @@ var udpconn net.Conn
 var packet []byte
 
 func main() {
-	svc := ddsvc.InitService("dd-nats-opcda")
-
-	if app.Init(svc) {
-		routes.RegisterRoutes(svc)
-		svc.RunService(app.RunApp)
+	if svc := ddsvc.InitService("dd-nats-opcda"); svc != nil {
+		if app.Init(svc) {
+			routes.RegisterRoutes(svc)
+			svc.RunService(app.RunApp)
+		}
 	}
 
 	log.Printf("Exiting ...")
