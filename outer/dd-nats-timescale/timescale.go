@@ -9,13 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"github.com/nats-io/nats.go"
 )
 
 type TimescaleEmitter struct {
@@ -51,13 +49,15 @@ func (emitter *TimescaleEmitter) InitEmitter() error {
 	return nil
 }
 
-func (emitter *TimescaleEmitter) ProcessDataPointHandler(nmsg *nats.Msg) {
+func (emitter *TimescaleEmitter) ProcessDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(nmsg.Data, &dp); err == nil {
+	if err := json.Unmarshal(data, &dp); err == nil {
 		emitter.ProcessMessage(dp)
 	} else {
-		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
+		svc.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
 	}
+
+	return nil
 }
 
 func (emitter *TimescaleEmitter) ProcessMessage(dp types.DataPoint) {
@@ -123,11 +123,11 @@ func (emitter *TimescaleEmitter) connectdb() error {
 	// dburl := fmt.Sprintf("postgres://%s:%s@%s:5432/%s", emitter.User, emitter.Password, emitter.Host, emitter.Database)
 	TimescaleDBConn, emitter.err = pgxpool.Connect(context.Background(), psqlInfo)
 	if emitter.err != nil {
-		logger.Log("error", "TimescaleDB emitter", fmt.Sprintf("Failed to connect to the database, err: %s", emitter.err.Error()))
+		svc.Error("TimescaleDB emitter", fmt.Sprintf("Failed to connect to the database, err: %s", emitter.err.Error()))
 		return emitter.err
 	}
 
-	logger.Log("info", "TimescaleDB emitter", fmt.Sprintf("Database server connected: %s", emitter.Host))
+	svc.Info("TimescaleDB emitter", fmt.Sprintf("Database server connected: %s", emitter.Host))
 	return emitter.err
 }
 
@@ -168,7 +168,7 @@ func (emitter *TimescaleEmitter) insertBatch() error {
 		if err != nil {
 			switch err := err.(type) {
 			default:
-				logger.Log("error", "TimescaleDB emitter", fmt.Sprintf("failed to insert: %#v", err))
+				svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert: %#v", err))
 				// log.Println(insert)
 				emitter.initBatch()
 				return err
@@ -177,7 +177,7 @@ func (emitter *TimescaleEmitter) insertBatch() error {
 					return emitter.connectdb()
 				}
 
-				logger.Log("error", "TimescaleDB emitter", fmt.Sprintf("failed to insert: %#v", err))
+				svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert: %#v", err))
 				// log.Println(insert)
 				emitter.initBatch()
 				return err

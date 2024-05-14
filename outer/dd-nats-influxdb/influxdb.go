@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"net/url"
 
-	"dd-nats/common/logger"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 
 	influxd "github.com/influxdata/influxdb1-client"
-
-	"github.com/nats-io/nats.go"
 )
 
 type InfluxDBEmitter struct {
@@ -23,9 +21,11 @@ type InfluxDBEmitter struct {
 	messages  chan types.DataPoint `json:"-" gorm:"-"`
 	points    []influxd.Point      `json:"-" gorm:"-"`
 	count     uint64               `json:"-" gorm:"-"`
+	svc       *ddsvc.DdUsvc        `json:"-" gorm:"-"`
 }
 
-func (emitter *InfluxDBEmitter) InitEmitter() error {
+func (emitter *InfluxDBEmitter) InitEmitter(svc *ddsvc.DdUsvc) error {
+	emitter.svc = svc
 	emitter.connectdb()
 	emitter.initBatch()
 	emitter.messages = make(chan types.DataPoint, 2000)
@@ -35,13 +35,15 @@ func (emitter *InfluxDBEmitter) InitEmitter() error {
 	return nil
 }
 
-func (emitter *InfluxDBEmitter) ProcessDataPointHandler(nmsg *nats.Msg) {
+func (emitter *InfluxDBEmitter) ProcessDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(nmsg.Data, &dp); err == nil {
+	if err := json.Unmarshal(data, &dp); err == nil {
 		emitter.ProcessMessage(dp)
 	} else {
-		logger.Error("InfluxDB usvc", "Failed to unmarshal process data: %s", err.Error())
+		emitter.svc.Error("InfluxDB usvc", "Failed to unmarshal process data: %s", err.Error())
 	}
+
+	return nil
 }
 
 func (emitter *InfluxDBEmitter) ProcessMessage(dp types.DataPoint) {
@@ -75,9 +77,9 @@ func (emitter *InfluxDBEmitter) connectdb() error {
 	})
 
 	if emitter.err == nil {
-		logger.Log("info", "InfluxDB emitter", "Database server connected: localhost")
+		emitter.svc.Log("info", "InfluxDB emitter", "Database server connected: localhost")
 	} else {
-		logger.Log("info", "InfluxDB emitter", fmt.Sprintf("Database server connect: localhost, failed: %s", emitter.err.Error()))
+		emitter.svc.Log("info", "InfluxDB emitter", fmt.Sprintf("Database server connect: localhost, failed: %s", emitter.err.Error()))
 	}
 
 	return emitter.err
@@ -113,7 +115,7 @@ func (emitter *InfluxDBEmitter) insertBatch() error {
 			RetentionPolicy: "autogen",
 		}
 		if _, emitter.err = emitter.client.Write(bps); emitter.err != nil {
-			logger.Log("info", "InfluxDB emitter", fmt.Sprintf("Failed to insert new data: %s", emitter.err.Error()))
+			emitter.svc.Log("info", "InfluxDB emitter", fmt.Sprintf("Failed to insert new data: %s", emitter.err.Error()))
 		}
 	}
 

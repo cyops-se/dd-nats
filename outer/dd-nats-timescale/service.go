@@ -1,11 +1,8 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"encoding/json"
-
-	"github.com/nats-io/nats.go"
 )
 
 type updateMetaRequest struct {
@@ -18,12 +15,12 @@ type allMetaResponse struct {
 }
 
 func registerRoutes() {
-	ddnats.Subscribe("usvc.timescale.meta.getall", getAllMeta)
-	ddnats.Subscribe("usvc.timescale.meta.updateall", updateAllMeta)
-	ddnats.Subscribe("usvc.timescale.meta.delete", deleteMeta)
+	svc.Subscribe("usvc.timescale.meta.getall", getAllMeta)
+	svc.Subscribe("usvc.timescale.meta.updateall", updateAllMeta)
+	svc.Subscribe("usvc.timescale.meta.delete", deleteMeta)
 }
 
-func getAllMeta(nmsg *nats.Msg) {
+func getAllMeta(topic string, responseTopic string, data []byte) error {
 	var err error
 	var response allMetaResponse
 	response.Success = true
@@ -33,14 +30,14 @@ func getAllMeta(nmsg *nats.Msg) {
 		response.StatusMessage = err.Error()
 	}
 
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }
 
-func updateAllMeta(nmsg *nats.Msg) {
+func updateAllMeta(topic string, responseTopic string, data []byte) error {
 	response := &types.StatusResponse{Success: true}
 
 	var request updateMetaRequest
-	if err := json.Unmarshal(nmsg.Data, &request); err != nil {
+	if err := json.Unmarshal(data, &request); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -50,14 +47,14 @@ func updateAllMeta(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }
 
-func deleteMeta(nmsg *nats.Msg) {
+func deleteMeta(topic string, responseTopic string, data []byte) error {
 	response := &types.StatusResponse{Success: true}
 
 	var request updateMetaRequest
-	if err := json.Unmarshal(nmsg.Data, &request); err != nil {
+	if err := json.Unmarshal(data, &request); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -67,5 +64,5 @@ func deleteMeta(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }

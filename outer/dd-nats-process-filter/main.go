@@ -1,14 +1,14 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"log"
 )
 
+var svc *ddsvc.DdUsvc
+
 func main() {
-	if svc := ddsvc.InitService("dd-nats-process-filter"); svc != nil {
+	if svc = ddsvc.InitService("dd-nats-process-filter"); svc != nil {
 		svc.RunService(runEngine)
 	}
 
@@ -16,7 +16,7 @@ func main() {
 }
 
 func runEngine(svc *ddsvc.DdUsvc) {
-	logger.Info("Microservices", "Process filter microservice running")
+	svc.Info("Microservices", "Process filter microservice running")
 
 	datapoints = make(map[string]*filteredPoint)
 	loadFilterMeta()
@@ -24,8 +24,8 @@ func runEngine(svc *ddsvc.DdUsvc) {
 
 	// Listen for incoming process data from the inside
 	topic := svc.Get("topic", "inner.process.actual")
-	ddnats.Subscribe(topic, processDataPointHandler)
+	svc.Subscribe(topic, processDataPointHandler)
 
 	// Listen for changes to meta data
-	ddnats.Subscribe("system.event.timescale.metaupdated", processMetaUpdate)
+	svc.Subscribe("system.event.timescale.metaupdated", processMetaUpdate)
 }

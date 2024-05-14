@@ -8,7 +8,6 @@
 package ddsvc
 
 import (
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"flag"
 	"fmt"
@@ -29,20 +28,10 @@ var SysInfo types.SystemInformation
 
 func handlePanic() {
 	if r := recover(); r != nil {
-		// logger.Error("Windows service error", "Panic, recovery: %#v", r)
+		// ddsvc.Error("Windows service error", "Panic, recovery: %#v", r)
 		log.Printf("Windows server panic, recovery: %#v", r)
 		return
 	}
-}
-
-func reportError(f string, args ...interface{}) {
-	msg := fmt.Sprintf(f, args...)
-	logger.Error("Windows service error", msg)
-}
-
-func reportInfo(f string, args ...interface{}) {
-	msg := fmt.Sprintf(f, args...)
-	logger.Trace("Windows service info", msg)
 }
 
 func processArgs(svcName string) *types.Context {
@@ -52,7 +41,7 @@ func processArgs(svcName string) *types.Context {
 	flag.BoolVar(&ctx.Trace, "trace", false, "Prints traces from the application to the console")
 	flag.BoolVar(&ctx.Version, "v", false, "Prints the commit hash and exits")
 	flag.StringVar(&ctx.Name, "name", svcName, "Sets the name of the service")
-	flag.StringVar(&ctx.NatsUrl, "nats", "nats://localhost:4222", "URL to NATS service")
+	flag.StringVar(&ctx.Url, "url", "nats://localhost:4222", "URL to NATS service")
 	flag.IntVar(&ctx.Port, "port", 3000, "Port for HTTP user interface, if supported by service")
 	flag.StringVar(&ctx.Id, "id", "default", "Service instance identity. Important when running multiple instances of the same service")
 	flag.Parse()
@@ -91,10 +80,10 @@ func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes c
 	tick := fasttick
 	changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
 
-	reportInfo("starting engine %s", m.usvc.Name)
+	m.usvc.Info("Service engine", "Starting engine %s", m.usvc.Name)
 	go m.engine(m.usvc)
 
-	reportInfo("entering service control loop")
+	m.usvc.Info("Service engine", "Entering service control loop")
 
 loop:
 	for {
@@ -112,7 +101,7 @@ loop:
 				// golang.org/x/sys/windows/svc.TestExample is verifying this output.
 				testOutput := strings.Join(args, "-")
 				testOutput += fmt.Sprintf("-%d", c.Context)
-				reportInfo(testOutput)
+				m.usvc.Info("Service engine", testOutput)
 				break loop
 			case svc.Pause:
 				changes <- svc.Status{State: svc.Paused, Accepts: cmdsAccepted}
@@ -121,18 +110,18 @@ loop:
 				changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
 				tick = fasttick
 			default:
-				reportError("unexpected control request #%d", c)
+				m.usvc.Error("Service engine", "Unexpected control request #%v", c)
 			}
 		}
 	}
-	reportInfo("exiting service control loop")
+	m.usvc.Info("Service engine", "Exiting service control loop")
 	changes <- svc.Status{State: svc.StopPending}
 	return
 }
 
 func RunService(usvc *DdUsvc, engine func(*DdUsvc)) {
 	var err error
-	reportInfo("starting %s service", usvc.Name)
+	usvc.Info("Service engine", "Starting %s service", usvc.Name)
 	run := svc.Run
 
 	inService, err := svc.IsWindowsService()
@@ -145,8 +134,8 @@ func RunService(usvc *DdUsvc, engine func(*DdUsvc)) {
 
 	err = run(usvc.Name, &myservice{engine: engine, usvc: usvc})
 	if err != nil {
-		reportError("%s service failed: %s", usvc.Name, err.Error())
+		usvc.Error("Service engine", "%s service failed: %s", usvc.Name, err.Error())
 		return
 	}
-	reportInfo("%s service stopped", usvc.Name)
+	usvc.Info("Service engine", "%s service stopped", usvc.Name)
 }

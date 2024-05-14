@@ -1,14 +1,13 @@
-package logger
+package ddsvc
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"fmt"
 	"log"
 	"time"
 )
 
-func Log(category string, title string, msg string) string {
+func (svc *DdUsvc) Log(category string, title string, msg string) string {
 	entry := &types.Log{Time: time.Now().UTC(), Category: category, Title: title, Description: msg}
 	// if db.DB != nil {
 	// 	db.DB.Create(&entry)
@@ -17,26 +16,30 @@ func Log(category string, title string, msg string) string {
 	text := fmt.Sprintf("%s: %s, %s", category, title, msg)
 	log.Println(text)
 
-	ddnats.Publish("system.log."+category, entry)
+	usvc.Publish("system.log."+category, entry)
 	return text
 }
 
-func Info(title string, format string, args ...interface{}) error {
+func (svc *DdUsvc) Info(title string, format string, args ...interface{}) error {
 	msg := fmt.Sprintf(format, args...)
-	text := Log("info", title, msg)
+	text := svc.Log("info", title, msg)
 	return fmt.Errorf(text)
 }
 
-func Trace(title string, format string, args ...interface{}) error {
+func (svc *DdUsvc) Trace(title string, format string, args ...interface{}) error {
+	if !svc.Context.Trace {
+		return nil
+	}
+
 	msg := fmt.Sprintf(format, args...)
-	text := Log("trace", title, msg)
+	text := svc.Log("trace", title, msg)
 	return fmt.Errorf(text)
 }
 
-func Error(title string, format string, args ...interface{}) error {
+func (svc *DdUsvc) Error(title string, format string, args ...interface{}) error {
 	msg := fmt.Sprintf(format, args...)
-	text := Log("error", title, msg)
-	// NotifySubscribers("logger.error", fmt.Sprintf("%s: %s", title, msg))
+	text := svc.Log("error", title, msg)
+	// NotifySubscribers("ddsvc.Error", fmt.Sprintf("%s: %s", title, msg))
 	return fmt.Errorf(text)
 }
 

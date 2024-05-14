@@ -1,8 +1,6 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"encoding/json"
 	"io/ioutil"
@@ -25,8 +23,8 @@ func createManifest(ctx *context) {
 		content, _ := json.Marshal(Manifest)
 		ioutil.WriteFile(filename, content, 0777)
 
-		if err := ddnats.Publish("file.manifest", Manifest); err != nil {
-			logger.Error("File manifest", "Failed to publish file manifest to NATS, err: %s", err.Error())
+		if err := ctx.svc.Publish("file.manifest", Manifest); err != nil {
+			ctx.svc.Error("File manifest", "Failed to publish file manifest to NATS, err: %s", err.Error())
 		}
 	}
 }
@@ -35,7 +33,7 @@ func directoryManifest(ctx *context, dirname string, manifest *types.FileManifes
 	readdir := path.Join(ctx.basedir, ctx.donedir, dirname)
 	infos, err := ioutil.ReadDir(readdir)
 	if err != nil {
-		logger.Error("file manifest", "error reading directory: %s, error: %s", readdir, err.Error())
+		ctx.svc.Error("file manifest", "error reading directory: %s, error: %s", readdir, err.Error())
 		return
 	}
 

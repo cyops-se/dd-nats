@@ -1,22 +1,19 @@
 package routes
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/inner/dd-nats-file-inner/app"
 	"dd-nats/inner/dd-nats-file-inner/messages"
 	"log"
 	"os"
 	"path"
-
-	"github.com/nats-io/nats.go"
 )
 
 func registerFolderRoutes() {
 	log.Println("Registering folder routes")
-	ddnats.Subscribe("usvc.filetransfer.listfolders", listFolders)
+	usvc.Subscribe("usvc.filetransfer.listfolders", listFolders)
 }
 
-func listFolders(msg *nats.Msg) {
+func listFolders(topic string, responseTopic string, data []byte) error {
 	var response messages.FolderInfo
 	response.Success = true
 
@@ -26,5 +23,5 @@ func listFolders(msg *nats.Msg) {
 	response.ProcessingDir = path.Join(cwd, "outgoing", ctx.ProcessingDir)
 	response.FailDir = path.Join(cwd, "outgoing", ctx.FailDir)
 	response.DoneDir = path.Join(cwd, "outgoing", ctx.DoneDir)
-	ddnats.Respond(msg, response)
+	return usvc.Publish(responseTopic, response)
 }

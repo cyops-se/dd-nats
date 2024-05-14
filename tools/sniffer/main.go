@@ -1,12 +1,10 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
+	"dd-nats/common/ddmb"
 	"flag"
 	"log"
 	"runtime"
-
-	"github.com/nats-io/nats.go"
 )
 
 func main() {
@@ -14,16 +12,19 @@ func main() {
 	url := flag.String("url", "nats://localhost:4222", "NATS server URL")
 	flag.Parse()
 
-	nc, err := ddnats.Connect(*url)
-	if err != nil {
-		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-		return
+	if mb := ddmb.NewMessageBroker(*url); mb != nil {
+		if err := mb.Connect(*url); err != nil {
+			log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
+			return
+		}
+
+		mb.Subscribe(*subject, msgHandler)
 	}
 
-	nc.Subscribe(*subject, msgHandler)
 	runtime.Goexit()
 }
 
-func msgHandler(msg *nats.Msg) {
-	log.Println(msg.Subject, string(msg.Data))
+func msgHandler(topic string, responseTopic string, data []byte) error {
+	log.Println(topic, responseTopic, string(data))
+	return nil
 }

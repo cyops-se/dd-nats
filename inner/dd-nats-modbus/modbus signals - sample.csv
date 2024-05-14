@@ -1,0 +1,5 @@
+﻿Tag name;Tag description (optional);Signal Type (optional);IP address;Data Type;Data Length;Unit;Byte Order;FC;Modbus Address;Range;Range PLC
+[tag];[description];Serial Analog;[slave ip address];U-Int;16-bit;m;AB CD;3;40107;0-1;3965-20000
+[tag];[description];Serial Analog;[slave ip address];U-Int;16-bit;m³/h;AB CD;3;40104;0-60;3965-20000
+[tag];[description];Serial Analog;[slave ip address];U-Int;16-bit;mv;AB CD;3;40105;0-2,5;3965-20000
+[tag];[description];Serial Analog;[slave ip address];U-Int;16-bit;m;AB CD;3;40106;0-5;3965-20000

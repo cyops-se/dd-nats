@@ -3,14 +3,13 @@ package app
 import (
 	"dd-nats/common/db"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"time"
 )
 
 func Init(svc *ddsvc.DdUsvc) bool {
 	if err := db.ConnectDatabase(*svc.Context, "dd-opcda.db"); err != nil {
-		logger.Error("Local database", "Failed to connect to local database, error: %s", err.Error())
+		svc.Error("Local database", "Failed to connect to local database, error: %s", err.Error())
 		return false
 	}
 
@@ -23,7 +22,7 @@ func Init(svc *ddsvc.DdUsvc) bool {
 }
 
 func RunApp(svc *ddsvc.DdUsvc) {
-	logger.Info("Microservices", "OPC DA microservice running")
+	svc.Info("Microservices", "OPC DA microservice running")
 
 	for {
 		time.Sleep(1 * time.Second)

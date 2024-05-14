@@ -1,18 +1,13 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"log"
 	"strconv"
-
-	"github.com/nats-io/nats.go"
 )
 
 var emitter TimescaleEmitter
 var svc *ddsvc.DdUsvc
-var sub *nats.Subscription
 
 func main() {
 	if svc = ddsvc.InitService("dd-nats-timescale"); svc != nil {
@@ -23,7 +18,7 @@ func main() {
 }
 
 func runEngine(svc *ddsvc.DdUsvc) {
-	logger.Info("Microservices", "Timescale microservice running")
+	svc.Info("Microservices", "Timescale microservice running")
 	registerRoutes()
 
 	emitter.Host = svc.Get("host", "localhost")
@@ -35,12 +30,11 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	emitter.InitEmitter()
 
 	topic := svc.Get("topic", "inner.process.actual")
-	sub, _ = ddnats.Subscribe(topic, emitter.ProcessDataPointHandler)
-	ddnats.Subscribe("usvc.ddnatstimescale.event.settingschanged", settingsChangedHandler)
+	svc.Subscribe(topic, emitter.ProcessDataPointHandler)
+	svc.Subscribe("usvc.ddnatstimescale.event.settingschanged", settingsChangedHandler)
 }
 
-func settingsChangedHandler(nmsg *nats.Msg) {
-	sub.Unsubscribe()
+func settingsChangedHandler(subject string, responseTopic string, data []byte) error {
 	topic := svc.Get("topic", "inner.process.actual")
-	sub, _ = ddnats.Subscribe(topic, emitter.ProcessDataPointHandler)
+	return svc.Subscribe(topic, emitter.ProcessDataPointHandler)
 }

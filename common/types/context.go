@@ -6,7 +6,7 @@ type Context struct {
 	Wdir    string
 	Trace   bool
 	Version bool
-	NatsUrl string
+	Url     string
 	Port    int
 	Id      string
 }

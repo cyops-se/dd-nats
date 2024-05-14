@@ -195,7 +195,7 @@
         },
         {
           icon: 'mdi-transfer',
-          text: 'File Transfer',
+          text: 'File Transfer (inner)',
           usvc: 'ddnatsfileinner',
           sublinks: [
             {
@@ -270,7 +270,7 @@
         },
         {
           icon: 'mdi-transfer',
-          text: 'File Transfer',
+          text: 'File Transfer (outer)',
           usvc: 'ddnatsfileouter',
           sublinks: [
             {

@@ -1,35 +1,32 @@
 package routes
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-modbus/modbus"
 	"encoding/json"
-
-	"github.com/nats-io/nats.go"
 )
 
-func RegisterModbusSlaveRoutes() {
-	ddnats.Subscribe("usvc.modbus.slaves.getall", getAllModbusSlaves)
-	ddnats.Subscribe("usvc.modbus.slaves.add", addModbusSlaves)
-	ddnats.Subscribe("usvc.modbus.slaves.update", updateModbusSlaves)
-	ddnats.Subscribe("usvc.modbus.slaves.delete", deleteModbusSlaves)
-	ddnats.Subscribe("usvc.modbus.slaves.start", startModbusSlave)
-	ddnats.Subscribe("usvc.modbus.slaves.stop", stopModbusSlave)
+func registerModbusSlaveRoutes() {
+	usvc.Subscribe("usvc.modbus.slaves.getall", getAllModbusSlaves)
+	usvc.Subscribe("usvc.modbus.slaves.add", addModbusSlaves)
+	usvc.Subscribe("usvc.modbus.slaves.update", updateModbusSlaves)
+	usvc.Subscribe("usvc.modbus.slaves.delete", deleteModbusSlaves)
+	usvc.Subscribe("usvc.modbus.slaves.start", startModbusSlave)
+	usvc.Subscribe("usvc.modbus.slaves.stop", stopModbusSlave)
 }
 
-func getAllModbusSlaves(nmsg *nats.Msg) {
+func getAllModbusSlaves(topic string, responseTopic string, data []byte) error {
 	var response modbus.ModbusSlaveItemsResponse
 	response.Success = true
 	response.Items = modbus.GetModbusSlaves()
 	response.Success = false
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func addModbusSlaves(nmsg *nats.Msg) {
+func addModbusSlaves(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -39,13 +36,13 @@ func addModbusSlaves(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func updateModbusSlaves(nmsg *nats.Msg) {
+func updateModbusSlaves(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -56,13 +53,13 @@ func updateModbusSlaves(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func deleteModbusSlaves(nmsg *nats.Msg) {
+func deleteModbusSlaves(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -72,13 +69,13 @@ func deleteModbusSlaves(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func startModbusSlave(nmsg *nats.Msg) {
+func startModbusSlave(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -89,13 +86,13 @@ func startModbusSlave(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func stopModbusSlave(nmsg *nats.Msg) {
+func stopModbusSlave(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -106,5 +103,5 @@ func stopModbusSlave(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }

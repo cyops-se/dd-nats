@@ -25,25 +25,3 @@ func main() {
 
 	log.Printf("Exiting ...")
 }
-
-// func main() {
-// 	svcName := "dd-nats-opcda"
-// 	_, err := ddnats.Connect(nats.DefaultURL)
-// 	if err != nil {
-// 		log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
-// 		return
-// 	}
-
-// 	ctx := ddsvc.ProcessArgs(svcName)
-// 	if ctx == nil {
-// 		return
-// 	}
-
-// 	if app.Init(ctx) {
-// 		routes.RegisterRoutes()
-// 		go ddnats.SendHeartbeat(ctx.Name)
-// 		ddsvc.RunService(ctx.Name, app.RunApp)
-// 	}
-
-// 	log.Printf("Exiting ...")
-// }

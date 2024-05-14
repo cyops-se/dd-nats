@@ -2,9 +2,7 @@ package app
 
 import (
 	"crypto/sha256"
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"fmt"
 	"hash"
@@ -22,6 +20,7 @@ type context struct {
 	ProcessingDir string
 	DoneDir       string
 	FailDir       string
+	svc           *ddsvc.DdUsvc
 }
 
 type progress struct {
@@ -37,7 +36,7 @@ func RunEngine(svc *ddsvc.DdUsvc) {
 	log.Println("Engine running ...")
 
 	// Watch folders for new data
-	ctx = initContext(svc.Context.Wdir)
+	ctx = initContext(svc)
 	go monitorFilesystem(ctx)
 	go createManifest(ctx)
 }
@@ -67,7 +66,7 @@ func processDirectory(ctx *context, dirname string) {
 			movename := path.Join(processingdir, fi.Name())
 			if err := os.Rename(filename, movename); err == nil {
 				info := &types.FileInfo{Name: fi.Name(), Path: dirname, Size: int(fi.Size()), Date: fi.ModTime()}
-				ddnats.Event("filetransfer.request", info)
+				ctx.svc.Event("filetransfer.request", info)
 				sendFile(ctx, info) // Do it sequentially to minimize packet loss
 			} else {
 				// log.Printf("Failed to move file to processing area: %s, error %s", filename, err.Error())
@@ -85,30 +84,30 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	fi, err := os.Lstat(filename)
 	if err != nil {
-		logger.Error("Filetransfer", "Cannot find file: %s, error: %s", filename, err.Error())
+		ctx.svc.Error("Filetransfer", "Cannot find file: %s, error: %s", filename, err.Error())
 		return fmt.Errorf("file not found")
 	}
 
 	if fi.IsDir() {
-		logger.Error("Filetransfer", "'filename' points to a directory, not a file: %s", filename)
+		ctx.svc.Error("Filetransfer", "'filename' points to a directory, not a file: %s", filename)
 		return fmt.Errorf("directory, not file")
 	}
 
 	if fi.Size() == 0 {
-		logger.Error("Filetransfer", "'filename' is empty: %s", filename)
+		ctx.svc.Error("Filetransfer", "'filename' is empty: %s", filename)
 		return fmt.Errorf("empty file")
 	}
 
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 	start := &types.FileTransferStart{Name: name, Path: dir, Size: info.Size, TransferStart: time.Now().UTC(), TransferId: id}
-	ddnats.Publish("file.start", start)
+	ctx.svc.Publish("file.start", start)
 
 	hash := calcHash(filename)
 	hashvalue := hash.Sum(nil)
 
 	file, err := os.Open(filename)
 	if err != nil {
-		logger.Error("Filetransfer", "Failed to open %s", filename)
+		ctx.svc.Error("Filetransfer", "Failed to open %s", filename)
 		return err
 	}
 
@@ -127,13 +126,13 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 			block.Payload = content[:n]
 			block.Size = uint64(n)
 			block.FileIndex += block.Size
-			if err = ddnats.Publish(subject, block); err != nil {
-				errstr = logger.Error("NATS error", "Failed to publish file block, err: %s", err.Error()).Error()
+			if err = ctx.svc.Publish(subject, block); err != nil {
+				errstr = ctx.svc.Error("NATS error", "Failed to publish file block, err: %s", err.Error()).Error()
 			}
 
 			p.Index = block.FileIndex
 			p.Percent = (float64(p.Index) / float64(p.Size)) * 100.0
-			ddnats.Event("filetransfer.progress", p)
+			ctx.svc.Event("filetransfer.progress", p)
 			block.BlockNo++
 			time.Sleep(200 * time.Millisecond)
 		}
@@ -141,11 +140,11 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	file.Close()
 	end := types.FileTransferEnd{TransferId: id, TotalBlocks: block.BlockNo, TotalSize: block.FileIndex, Hash: hashvalue, Error: errstr}
-	ddnats.Publish("file.end", end)
+	ctx.svc.Publish("file.end", end)
 
 	todir := path.Join(ctx.BaseDir, ctx.DoneDir, dir)
 	if err != nil && err != io.EOF {
-		logger.Trace("File transfer failed", "Ended up with an error: %s", err.Error())
+		ctx.svc.Trace("File transfer failed", "Ended up with an error: %s", err.Error())
 		todir = path.Join(ctx.BaseDir, ctx.FailDir, dir)
 	}
 
@@ -153,12 +152,12 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	movename := path.Join(todir, name)
 	if err = os.Rename(filename, movename); err == nil {
-		logger.Trace("File transfer complete", "File %s, size %d transferred", filename, info.Size)
+		ctx.svc.Trace("File transfer complete", "File %s, size %d transferred", filename, info.Size)
 	} else {
-		logger.Error("Failed to move file", "Error when attempting to move file after file was transferred, file %s, size %d, error %s", filename, info.Size, err.Error())
+		ctx.svc.Error("Failed to move file", "Error when attempting to move file after file was transferred, file %s, size %d, error %s", filename, info.Size, err.Error())
 	}
 
-	ddnats.Event("filetransfer.complete", end)
+	ctx.svc.Event("filetransfer.complete", end)
 
 	time.Sleep(time.Millisecond)
 
@@ -180,8 +179,9 @@ func calcHash(filename string) hash.Hash {
 	return h
 }
 
-func initContext(wdir string) *context {
-	ctx := &context{BaseDir: path.Join(wdir, "outgoing"), NewDir: "new", ProcessingDir: "processing", DoneDir: "done", FailDir: "failed"}
+func initContext(svc *ddsvc.DdUsvc) *context {
+	wdir := svc.Context.Wdir
+	ctx := &context{BaseDir: path.Join(wdir, "outgoing"), NewDir: "new", ProcessingDir: "processing", DoneDir: "done", FailDir: "failed", svc: svc}
 	os.MkdirAll(path.Join(ctx.BaseDir, ctx.NewDir), 0755)
 	os.MkdirAll(path.Join(ctx.BaseDir, ctx.ProcessingDir), 0755)
 	os.MkdirAll(path.Join(ctx.BaseDir, ctx.DoneDir), 0755)

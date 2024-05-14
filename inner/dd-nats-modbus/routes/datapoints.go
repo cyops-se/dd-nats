@@ -1,34 +1,31 @@
 package routes
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-modbus/modbus"
 	"encoding/json"
-
-	"github.com/nats-io/nats.go"
 )
 
-func RegisterModbusItemRoutes() {
-	ddnats.Subscribe("usvc.modbus.items.getall", getAllModbusItems)
-	ddnats.Subscribe("usvc.modbus.items.add", addModbusItem)
-	ddnats.Subscribe("usvc.modbus.items.update", updateModbusItem)
-	ddnats.Subscribe("usvc.modbus.items.delete", deleteModbusItem)
-	ddnats.Subscribe("usvc.modbus.items.bulkchanges", bulkChangeModbusItems)
+func registerModbusItemRoutes() {
+	usvc.Subscribe("usvc.modbus.items.getall", getAllModbusItems)
+	usvc.Subscribe("usvc.modbus.items.add", addModbusItem)
+	usvc.Subscribe("usvc.modbus.items.update", updateModbusItem)
+	usvc.Subscribe("usvc.modbus.items.delete", deleteModbusItem)
+	usvc.Subscribe("usvc.modbus.items.bulkchanges", bulkChangeModbusItems)
 }
 
-func getAllModbusItems(nmsg *nats.Msg) {
+func getAllModbusItems(topic string, responseTopic string, data []byte) error {
 	var response modbus.ModbusItemsResponse
 	response.Success = true
 	response.Items = modbus.GetModbusDataItems()
 	response.Success = false
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func addModbusItem(nmsg *nats.Msg) {
+func addModbusItem(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -38,13 +35,13 @@ func addModbusItem(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func updateModbusItem(nmsg *nats.Msg) {
+func updateModbusItem(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusSlaveItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -55,13 +52,13 @@ func updateModbusItem(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func deleteModbusItem(nmsg *nats.Msg) {
+func deleteModbusItem(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
@@ -71,20 +68,23 @@ func deleteModbusItem(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func bulkChangeModbusItems(nmsg *nats.Msg) {
+func bulkChangeModbusItems(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
 	var items modbus.ModbusBulkItems
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
 		if err := modbus.BulkChangesModbusItems(items.Items); err != nil {
 			response.Success = false
 			response.StatusMessage = err.Error()
+		} else {
+			modbus.RestartModbusEngine()
 		}
 	}
-	ddnats.Respond(nmsg, response)
+
+	return usvc.Publish(responseTopic, response)
 }

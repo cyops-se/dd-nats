@@ -1,9 +1,7 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"encoding/binary"
 	"log"
 	"net"
@@ -26,17 +24,18 @@ var udpconn *net.UDPConn
 var activemsgs map[uint32]*msgInfo
 
 func main() {
-	if svc := ddsvc.InitService("dd-nats-outer-proxy"); svc != nil {
-		svc.RunService(runEngine)
+	var usvc *ddsvc.DdUsvc
+	if usvc = ddsvc.InitService("dd-nats-outer-proxy"); usvc != nil {
+		usvc.RunService(runEngine)
 	}
 
-	logger.Trace("Application status", "Exiting ...")
+	usvc.Trace("Application status", "Exiting ...")
 }
 
 func runEngine(svc *ddsvc.DdUsvc) {
 	port, _ := strconv.Atoi(svc.Get("port", "4359"))
 	if err := listenUDP(svc, port); err != nil {
-		logger.Error("Failed to connect", "Exiting application due to UDP connection failure, err: %s", err.Error())
+		svc.Error("Failed to connect", "Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
 	}
 
@@ -71,7 +70,7 @@ func readUDP(svc *ddsvc.DdUsvc, prefix string) {
 	for {
 		_, _, err := udpconn.ReadFromUDP(packet)
 		if err != nil {
-			logger.Error("Failed to read UDP", "Failed to read data packet, err: %s", err.Error())
+			svc.Error("Failed to read UDP", "Failed to read data packet, err: %s", err.Error())
 			continue
 		}
 
@@ -104,7 +103,7 @@ func readUDP(svc *ddsvc.DdUsvc, prefix string) {
 				msg.packetno = packetno
 
 				if msg.packetno != msg.lastpacket+1 {
-					logger.Error("Packets out of sync", "Attempting to synchronize: msgid %d, packet # %d, lastpacket %d, total size %d", msgid, msg.packetno, msg.lastpacket, totalsize)
+					svc.Error("Packets out of sync", "Attempting to synchronize: msgid %d, packet # %d, lastpacket %d, total size %d", msgid, msg.packetno, msg.lastpacket, totalsize)
 					delete(activemsgs, msg.msgid)
 					continue
 				}
@@ -119,7 +118,7 @@ func readUDP(svc *ddsvc.DdUsvc, prefix string) {
 		msg.index += chunksize
 
 		if msg.packetno == msg.totalpackets-1 {
-			ddnats.PublishData(prefix+msg.subject, msg.payload[:totalsize])
+			svc.Publish(prefix+msg.subject, msg.payload[:totalsize])
 			delete(activemsgs, msg.msgid)
 		}
 	}

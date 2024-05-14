@@ -115,6 +115,14 @@
             Import from CSV
           </v-btn>
           <v-btn
+            color="primary"
+            dark
+            class="ml-3"
+            @click="exportCSV"
+          >
+            Export to CSV
+          </v-btn>
+          <v-btn
             color="success"
             dark
             class="ml-3"
@@ -222,9 +230,11 @@
               for (var s = 0; s < this.slaves.length; s++) {
                 if (this.items[i].modbusslaveid === this.slaves[s].id) {
                   this.items[i].modbusslave = this.slaves[s]
+                  this.items[i].ipaddress = this.slaves[s].ip
                 }
               }
             }
+            console.log(JSON.stringify(this.items))
             this.loading = false
           })
           .catch((e) => {
@@ -282,10 +292,27 @@
       },
 
       exportCSV () {
+        /*
+          var tagname = record[0].trim()
+          var description = record[1].trim()
+          // signaltype not saved
+          var ipaddress = record[3].trim()
+          var datatype = record[4].trim()
+          var datalengthstr = record[5].trim()
+          var engunit = record[6].trim()
+          var byteorder = record[7].trim()
+          var functioncode = parseInt(record[8].trim())
+          var modbusaddress = parseInt(record[9].trim())
+          var rangestr = record[10].trim()
+          var plcrangestr = record[11].trim()
+        */
+
         let csvContent = 'data:text/csv;charset=utf-8,'
         csvContent += [
-          'name;slaveid;',
-          ...this.items.map(item => item.name + ';' + item.slaveid + ';'),
+          'tagname;description;signaltype;ipaddress;datatype;datalength;engunit;byteorder;functioncode;modbusaddress;range;rangeplc;',
+          ...this.items.map(item => item.name + ';' + item.description + ';;' + item.modbusslave.ip + ';' + item.datalength + ';' +
+              item.datatype + ';' + item.engunit + ';' + item.byteorder + ';' + item.functioncode + ';' +
+              item.modbusaddress + ';' + item.rangemin + '-' + item.rangemax + ';' + item.plcrangemin + '-' + item.plcrangemax + ';'),
         ]
           .join('\n')
           .replace(/(^\[)|(\]$)/gm, '')
@@ -341,7 +368,7 @@
         for (var mi = 0; mi < records.length; mi++) {
           var record = records[mi]
           // Required fields are tagname [0], ipaddress [3]
-          if (typeof record[0] !== 'string' || typeof record[3] !== 'string' || record[0] === '' || record[0] === 'Värde' || record[3] === '') {
+          if (typeof record[0] !== 'string' || typeof record[3] !== 'string' || record[0] === '' || record[3] === '') {
             continue
           }
 
@@ -415,16 +442,16 @@
         ApiService.post('nats/request', request)
           .then((response) => {
             if (response.data.success) {
-              this.$notification.success('Modbus bulk data change successful')
+              this.$notification.success('Modbus data import successful')
               this.refresh()
               this.saveDisabled = true
             } else {
-              this.$notification.error('Modbus bulk data change failed: ' + response.data.statusmsg)
+              this.$notification.error('Modbus data import failed: ' + response.data.statusmsg)
             }
           })
           .catch((response) => {
             console.log('ERROR response: ' + response.message)
-            this.$notification.error('Modbus bulk data change failed: ' + response.message)
+            this.$notification.error('Modbus data import failed: ' + response.message)
           })
         this.close()
       },

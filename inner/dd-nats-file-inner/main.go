@@ -9,7 +9,7 @@ import (
 
 func main() {
 	if svc := ddsvc.InitService("dd-nats-file-inner"); svc != nil {
-		routes.RegisterRoutes()
+		routes.RegisterRoutes(svc)
 		svc.RunService(app.RunEngine)
 	}
 

@@ -1,13 +1,10 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 	"encoding/json"
 	"log"
-
-	"github.com/nats-io/nats.go"
 )
 
 type categoryRequest struct {
@@ -21,9 +18,10 @@ type logResponse struct {
 
 var entries []types.Log
 var empty types.Log
+var svc *ddsvc.DdUsvc
 
 func main() {
-	if svc := ddsvc.InitService("dd-logger"); svc != nil {
+	if svc = ddsvc.InitService("dd-logger"); svc != nil {
 		svc.RunService(runEngine)
 	}
 
@@ -34,19 +32,21 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	entries = make([]types.Log, 0)
 
 	// Capture system logs
-	ddnats.Subscribe("system.log.>", logMessageHandler)
-	ddnats.Subscribe("inner.system.log.>", logMessageHandler)
+	svc.Subscribe("system.log.info", logMessageHandler)
+	svc.Subscribe("system.log.error", logMessageHandler)
+	svc.Subscribe("system.log.trace", logMessageHandler)
+	svc.Subscribe("inner.system.log.>", logMessageHandler)
 
 	// Service methods
-	ddnats.Subscribe("usvc.logs.getall", getAllLogs)
-	ddnats.Subscribe("usvc.logs.getcategory", getCategory)
+	svc.Subscribe("usvc.logs.getall", getAllLogs)
+	svc.Subscribe("usvc.logs.getcategory", getCategory)
 
 	log.Println("Logging service started!")
 }
 
-func logMessageHandler(nmsg *nats.Msg) {
+func logMessageHandler(topic string, responseTopic string, data []byte) error {
 	var entry types.Log
-	if err := json.Unmarshal(nmsg.Data, &entry); err == nil {
+	if err := json.Unmarshal(data, &entry); err == nil {
 		entries = append(entries, entry) // enqueue new entry
 		for len(entries) > 1000 {
 			entries[0] = empty
@@ -55,18 +55,20 @@ func logMessageHandler(nmsg *nats.Msg) {
 	} else {
 		log.Println("Failed to unmarshal log entry:", err.Error())
 	}
+
+	return nil
 }
 
-func getAllLogs(nmsg *nats.Msg) {
+func getAllLogs(topic string, responseTopic string, data []byte) error {
 	response := &logResponse{Entries: entries}
 	response.Success = true
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }
 
-func getCategory(nmsg *nats.Msg) {
+func getCategory(topic string, responseTopic string, data []byte) error {
 	var request categoryRequest
 	response := &logResponse{}
-	if err := json.Unmarshal(nmsg.Data, &request); err != nil {
+	if err := json.Unmarshal(data, &request); err != nil {
 		response.StatusMessage = err.Error()
 	} else {
 		response.Success = true
@@ -77,5 +79,5 @@ func getCategory(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }

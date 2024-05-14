@@ -18,5 +18,5 @@ func main() {
 }
 
 func runEngine(usvc *ddsvc.DdUsvc) {
-	go web.RunWeb(*usvc.Context)
+	go web.RunWeb(usvc)
 }

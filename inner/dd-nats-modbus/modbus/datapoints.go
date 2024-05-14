@@ -2,7 +2,6 @@ package modbus
 
 import (
 	"dd-nats/common/db"
-	"log"
 )
 
 func GetModbusDataItems() []*ModbusItem {
@@ -94,13 +93,13 @@ func BulkChangesModbusItems(items []*BulkChangeModbusItem) error {
 				if err = UpdateModbusItem(&item); err != nil {
 					anyerr = err
 				} else {
-					log.Printf("Bulk item saved: %s, %s", item.Name, item.Description)
+					usvc.Trace("Modbus TCP", "Bulk item saved: %s, %s", item.Name, item.Description)
 				}
 			} else {
 				if err = AddModbusDataItem(&item); err != nil {
 					anyerr = err
 				} else {
-					log.Printf("Bulk item created: %s, %s", item.Name, item.Description)
+					usvc.Trace("Modbus TCP", "Bulk item created: %s, %s", item.Name, item.Description)
 				}
 			}
 		} else {

@@ -9,9 +9,8 @@ import (
 
 func main() {
 	if svc := ddsvc.InitService("dd-nats-modbus"); svc != nil {
-		if app.Init(svc.Context) {
-			routes.RegisterModbusSlaveRoutes()
-			routes.RegisterModbusItemRoutes()
+		if app.Init(svc) {
+			routes.RegisterRoutes(svc)
 			svc.RunService(app.RunApp)
 		}
 	}

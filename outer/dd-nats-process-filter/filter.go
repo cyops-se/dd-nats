@@ -1,16 +1,12 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"encoding/json"
 	"log"
 	"math"
 	"os"
 	"time"
-
-	"github.com/nats-io/nats.go"
 )
 
 const (
@@ -43,9 +39,9 @@ type filteredPoint struct {
 
 var datapoints map[string]*filteredPoint
 
-func processMsgHandler(nmsg *nats.Msg) {
+func processMsgHandler(topic string, responseTopic string, data []byte) error {
 	var msg types.DataPointSample
-	if err := json.Unmarshal(nmsg.Data, &msg); err == nil {
+	if err := json.Unmarshal(data, &msg); err == nil {
 		for _, dp := range msg.Points {
 			fp, ok := datapoints[dp.Name]
 			if !ok {
@@ -55,34 +51,36 @@ func processMsgHandler(nmsg *nats.Msg) {
 
 			fp.DataPoint = dp
 
-			ddnats.Publish("process.actual", dp)
+			svc.Publish("process.actual", dp)
 			if fp.FilterType == FilterTypeNone {
-				ddnats.Publish("process.filtered", dp)
+				svc.Publish("process.filtered", dp)
 			} else if fp.FilterType == FilterTypeInterval {
 				if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
-					ddnats.Publish("process.filtered", dp)
+					svc.Publish("process.filtered", dp)
 					fp.PreviousTime = time.Now()
 					fp.PreviousValue = dp.Value
 				}
 			} else if fp.FilterType == FilterTypeDeadband {
 				fp.Integrator += dp.Value - fp.PreviousValue
 				if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
-					ddnats.Publish("process.filtered", dp)
+					svc.Publish("process.filtered", dp)
 					fp.Integrator = 0
 					fp.PreviousValue = dp.Value
 				}
 			}
-			ddnats.Publish("process.filtermeta", fp)
 
+			svc.Publish("process.filtermeta", fp)
 		}
 	} else {
-		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
+		svc.Error("Process filter", "Failed to unmarshal process data: %s", err.Error())
 	}
+
+	return nil
 }
 
-func processDataPointHandler(nmsg *nats.Msg) {
+func processDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(nmsg.Data, &dp); err == nil {
+	if err := json.Unmarshal(data, &dp); err == nil {
 		fp, ok := datapoints[dp.Name]
 		if !ok {
 			fp = &filteredPoint{}
@@ -93,36 +91,38 @@ func processDataPointHandler(nmsg *nats.Msg) {
 
 		// No more often than once a second regardless
 		if time.Since(fp.LastTime) > time.Second*time.Duration(1) {
-			ddnats.Publish("process.actual", dp)
+			svc.Publish("process.actual", dp)
 			fp.LastTime = time.Now()
 
 			if fp.FilterType == FilterTypeNone {
 				fp.PreviousValue = dp.Value
-				ddnats.Publish("process.filtered", dp)
+				svc.Publish("process.filtered", dp)
 			} else if fp.FilterType == FilterTypeInterval {
 				if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
-					ddnats.Publish("process.filtered", dp)
+					svc.Publish("process.filtered", dp)
 					fp.PreviousTime = time.Now()
 				}
 			} else if fp.FilterType == FilterTypeDeadband {
 				fp.Integrator += dp.Value - fp.PreviousValue
 				if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
-					ddnats.Publish("process.filtered", dp)
+					svc.Publish("process.filtered", dp)
 					fp.Integrator = 0
 					fp.PreviousValue = dp.Value
 				}
 			}
 
-			ddnats.Publish("process.filtermeta", fp)
+			svc.Publish("process.filtermeta", fp)
 		}
-
 	} else {
-		logger.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
+		svc.Error("Process filter", "Failed to unmarshal process data: %s", err.Error())
 	}
+
+	return nil
 }
 
-func processMetaUpdate(nmsg *nats.Msg) {
+func processMetaUpdate(topic string, responseTopic string, data []byte) error {
 	syncMetaWithTimescale()
+	return nil
 }
 
 func saveFilterMeta() error {
@@ -149,14 +149,14 @@ func loadFilterMeta() error {
 }
 
 func syncMetaWithTimescale() error {
-	response, err := ddnats.Request("usvc.timescale.meta.getall", nil)
+	response, err := svc.Request("usvc.timescale.meta.getall", nil)
 	if err != nil {
 		log.Printf("failed to get meta from timescale: %s", err.Error())
 		return err
 	}
 
 	var metaitems allMetaResponse
-	if err := json.Unmarshal(response.Data, &metaitems); err != nil {
+	if err := json.Unmarshal(response, &metaitems); err != nil {
 		return err
 	}
 

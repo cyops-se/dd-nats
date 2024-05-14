@@ -3,9 +3,7 @@ package app
 import (
 	"bufio"
 	"compress/gzip"
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"encoding/json"
 	"fmt"
@@ -17,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/nats-io/nats.go"
 )
 
 var channel chan types.DataPoint
@@ -53,7 +49,7 @@ func InitCache(svc *ddsvc.DdUsvc) {
 	createFile()
 	prevRemainder = -1
 	channel = make(chan types.DataPoint)
-	ddnats.Subscribe("process.actual", processMessages)
+	svc.Subscribe("process.actual", processMessages)
 	go pruneCache()
 }
 
@@ -122,7 +118,7 @@ func copyDir(source, destination string) error {
 		}
 	})
 	if err != nil {
-		logger.Error("Cache", "copy command failed: %s", err.Error())
+		lsvc.Error("Cache", "copy command failed: %s", err.Error())
 	}
 	return err
 }
@@ -135,7 +131,7 @@ func copyFile(src, dst string) (err error) {
 	defer in.Close()
 
 	dir := path.Dir(strings.ReplaceAll(dst, "\\", "/"))
-	logger.Trace("Cache", "Creating directory %s", dir)
+	lsvc.Trace("Cache", "Creating directory %s", dir)
 	os.MkdirAll(dir, 0755)
 	out, err := os.Create(dst)
 	if err != nil {
@@ -158,7 +154,7 @@ func resendCacheItem(item CacheItem) int {
 	// First put it on the file transfer directory
 	newFilename := path.Join("outgoing", "new", item.Filename)
 	if err := copyFile(item.Filename, newFilename); err != nil {
-		logger.Error("Cache", "Failed to copy file %s to %s, error: %s", item.Filename, newFilename, err.Error())
+		lsvc.Error("Cache", "Failed to copy file %s to %s, error: %s", item.Filename, newFilename, err.Error())
 	}
 	return 1
 }
@@ -185,7 +181,7 @@ func refreshCache() {
 	cacheInfo.Items = nil
 	cacheInfo.Size = 0
 	if err := filepath.Walk("cache", indexer); err != nil {
-		logger.Error("Cache", "Filewak error: %s", err.Error())
+		lsvc.Error("Cache", "Filewak error: %s", err.Error())
 	}
 	cacheInfo.Count = len(cacheInfo.Items)
 	cacheMutex.Unlock()
@@ -195,9 +191,9 @@ func cacheMessage(msg *types.DataPoint) {
 	channel <- *msg
 }
 
-func processMessages(nmsg *nats.Msg) {
+func processMessages(subject string, responseTopic string, data []byte) error {
 	var msg types.DataPoint
-	json.Unmarshal(nmsg.Data, &msg)
+	json.Unmarshal(data, &msg)
 	remainder := time.Now().UTC().Minute() % 5 // New file every 5 minutes
 	if remainder == 0 && remainder != prevRemainder {
 		createFile()
@@ -217,6 +213,8 @@ func processMessages(nmsg *nats.Msg) {
 
 		firstWrite = false
 	}
+
+	return nil
 }
 
 func createFile() {
@@ -259,7 +257,7 @@ func pruneCache() {
 		}
 
 		if count > 0 {
-			logger.Trace("Cache pruned", "%d files pruned from cache", count)
+			lsvc.Trace("Cache pruned", "%d files pruned from cache", count)
 		}
 	}
 }

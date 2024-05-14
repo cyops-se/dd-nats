@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"fmt"
 	"log"
@@ -58,7 +57,7 @@ func updateAllMetaInDatabase(items types.DataPointMetas) error {
 		}
 	}
 
-	ddnats.Event("timescale.metaupdated", nil)
+	svc.Event("timescale.metaupdated", nil)
 	return nil
 }
 
@@ -77,6 +76,6 @@ func deleteMetaInDatabase(items types.DataPointMetas) error {
 		}
 	}
 
-	ddnats.Event("timescale.metaupdated", nil)
+	svc.Event("timescale.metaupdated", nil)
 	return nil
 }

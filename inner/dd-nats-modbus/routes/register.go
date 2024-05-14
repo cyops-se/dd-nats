@@ -6,6 +6,6 @@ var usvc *ddsvc.DdUsvc
 
 func RegisterRoutes(svc *ddsvc.DdUsvc) {
 	usvc = svc
-	registerFolderRoutes()
-	registerManifestRoutes()
+	registerModbusItemRoutes()
+	registerModbusSlaveRoutes()
 }

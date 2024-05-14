@@ -1,9 +1,6 @@
 package routes
 
 import (
-	"dd-nats/common/ddnats"
-	"dd-nats/common/ddsvc"
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 	"dd-nats/inner/dd-nats-opcda/messages"
 	"encoding/json"
@@ -12,7 +9,6 @@ import (
 
 	"github.com/cyops-se/opc"
 	"github.com/go-ole/go-ole"
-	"github.com/nats-io/nats.go"
 )
 
 type Server struct {
@@ -26,45 +22,40 @@ var mutex sync.Mutex
 
 // Service routes
 
-func registerOpcRoutes(svc *ddsvc.DdUsvc) {
-	logger.Info("OPC DA", "Registering OPC DA routes")
+func registerOpcRoutes() {
+	usvc.Info("OPC DA", "Registering OPC DA routes")
 
 	// Server routes
-	ddnats.Subscribe(svc.RouteName("opc", "servers.getall"), getAllOpcServers)
-	ddnats.Subscribe(svc.RouteName("opc", "servers.root"), getOpcServerRoot)
-	ddnats.Subscribe(svc.RouteName("opc", "servers.getbranch"), getOpcServerBranch)
-	// ddnats.Subscribe("usvc.opc.servers.getall", getAllOpcServers)
-	// ddnats.Subscribe("usvc.opc.servers.root", getOpcServerRoot)
-	// ddnats.Subscribe("usvc.opc.servers.getbranch", getOpcServerBranch)
+	usvc.Subscribe(usvc.RouteName("opc", "servers.getall"), getAllOpcServers)
+	usvc.Subscribe(usvc.RouteName("opc", "servers.root"), getOpcServerRoot)
+	usvc.Subscribe(usvc.RouteName("opc", "servers.getbranch"), getOpcServerBranch)
 }
 
-func getAllOpcServers(msg *nats.Msg) {
+func getAllOpcServers(topic string, responseTopic string, data []byte) error {
 	if servers == nil {
 		initServers()
 	}
 
-	ddnats.Respond(msg, servers)
+	return usvc.Publish(responseTopic, servers)
 }
 
-func getOpcServerRoot(nmsg *nats.Msg) {
+func getOpcServerRoot(topic string, responseTopic string, data []byte) error {
 	if servers == nil {
 		initServers()
 	}
 
-	sid, err := getServerId(nmsg)
+	sid, err := getServerId(data)
 	if err != nil {
-		logger.Error("OPC DA", "Failed to unmarshal server id: %s", err.Error())
+		usvc.Error("OPC DA", "Failed to unmarshal server id: %s", err.Error())
 		response := &types.PlainMessage{Message: "Failed to unmarshal server id"}
-		ddnats.Respond(nmsg, response)
-		return
+		return usvc.Publish(responseTopic, response)
 	}
 
 	browser, err := getBrowser(sid)
 	if err != nil {
-		logger.Error("OPC DA", "Failed to get server browser: %s", err.Error())
+		usvc.Error("OPC DA", "Failed to get server browser: %s", err.Error())
 		response := &types.PlainMessage{Message: "Failed to get server browser"}
-		ddnats.Respond(nmsg, response)
-		return
+		return usvc.Publish(responseTopic, response)
 	}
 
 	mutex.Lock()
@@ -79,17 +70,17 @@ func getOpcServerRoot(nmsg *nats.Msg) {
 	response.Position = fmt.Sprintf("root.%s", opc.CursorPosition(browser))
 	response.ServerId = sid
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
-func getOpcServerBranch(nmsg *nats.Msg) {
+func getOpcServerBranch(topic string, responseTopic string, data []byte) error {
 	var msg messages.GetOPCBranches
-	err := json.Unmarshal(nmsg.Data, &msg)
+	err := json.Unmarshal(data, &msg)
 	if err != nil {
-		logger.Error("OPC DA", "Failed to unmarshal message: %s", err.Error())
+		usvc.Error("OPC DA", "Failed to unmarshal message: %s", err.Error())
 		response := &types.PlainMessage{Message: "Failed to unmarshal message"}
-		ddnats.Respond(nmsg, response)
-		return
+		usvc.Publish(responseTopic, response)
+		return err
 	}
 
 	browser, err := getBrowser(msg.ServerId)
@@ -105,7 +96,7 @@ func getOpcServerBranch(nmsg *nats.Msg) {
 	response.Position = fmt.Sprintf("root.%s", opc.CursorPosition(browser))
 	response.ServerId = msg.ServerId
 
-	ddnats.Respond(nmsg, response)
+	return usvc.Publish(responseTopic, response)
 }
 
 // Helper methods
@@ -114,7 +105,7 @@ func initServers() {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	logger.Info("OPC DA", "Enumerating OPC DA servers")
+	usvc.Info("OPC DA", "Enumerating OPC DA servers")
 	// Test if we can connect Graybox.Simulator since we can't browse it
 	i := 0
 	if client, err := opc.NewConnection(
@@ -122,7 +113,7 @@ func initServers() {
 		[]string{"localhost"},                              //  OPC servers nodes
 		[]string{"numeric.sin.int64", "numeric.saw.float"}, // slice of OPC tags
 	); err == nil {
-		logger.Info("OPC DA", "Adding Graybox.Simulator")
+		usvc.Info("OPC DA", "Adding Graybox.Simulator")
 		servers = append(servers, &Server{ProgID: "Graybox.Simulator", ID: i})
 		i++
 		defer client.Close()
@@ -130,21 +121,21 @@ func initServers() {
 
 	if ao := opc.NewAutomationObject(); ao != nil {
 		serversfound := ao.GetOPCServers("localhost")
-		logger.Log("trace", "OPC server init", fmt.Sprintf("Found %d server(s) on '%s':\n", len(serversfound), "localhost"))
+		usvc.Log("trace", "OPC server init", fmt.Sprintf("Found %d server(s) on '%s':\n", len(serversfound), "localhost"))
 		for _, server := range serversfound {
-			logger.Log("trace", "OPC server found", server)
-			logger.Info("OPC DA", "Adding %s", server)
+			usvc.Log("trace", "OPC server found", server)
+			usvc.Info("OPC DA", "Adding %s", server)
 			servers = append(servers, &Server{ProgID: server, ID: i})
 			i++
 		}
 	} else {
-		logger.Log("error", "OPC server init failure", "Unable to get new automation object")
+		usvc.Log("error", "OPC server init failure", "Unable to get new automation object")
 	}
 }
 
-func getServerId(msg *nats.Msg) (int, error) {
+func getServerId(data []byte) (int, error) {
 	var intmsg types.IntMessage
-	if err := json.Unmarshal(msg.Data, &intmsg); err != nil {
+	if err := json.Unmarshal(data, &intmsg); err != nil {
 		return 0, err
 	}
 
@@ -162,7 +153,7 @@ func getServer(sid int) (*Server, error) {
 func getBrowser(sid int) (*ole.VARIANT, error) {
 	server, err := getServer(sid)
 	if err != nil {
-		logger.Error("Servers engine", "Failed to get server '%s', error: %s", sid, err)
+		usvc.Error("Servers engine", "Failed to get server '%s', error: %s", sid, err)
 		return nil, err
 	}
 

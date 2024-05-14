@@ -2,11 +2,9 @@ package modbus
 
 import (
 	"dd-nats/common/db"
-	"dd-nats/common/ddnats"
-	"dd-nats/common/logger"
+	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -35,6 +33,7 @@ type modbusConnection struct {
 
 type ItemByAddress []*ModbusItem
 
+var usvc *ddsvc.DdUsvc
 var modbusConnections []*modbusConnection
 var slaves []*ModbusSlaveItem
 var datapoints []*ModbusItem
@@ -57,17 +56,15 @@ func transposeAddress(item *ModbusItem) uint16 {
 }
 
 func buildDatasets(slaves []*ModbusSlaveItem, allitems []*ModbusItem) {
-	log.Printf("Building datasets ...")
+	usvc.Trace("Modbus TCP", "Building datasets ...")
 
 	for _, slave := range slaves {
-		if TRACE {
-			log.Printf(" ... for slave: %s, ip: %s, port: %d, offset: %d", slave.Name, slave.IPAddress, slave.Port, slave.Offset)
-		}
+		usvc.Trace("Modbus TCP", " ... for slave: %s, ip: %s, port: %d, offset: %d", slave.Name, slave.IPAddress, slave.Port, slave.Offset)
 
 		mc := &modbusConnection{Slave: slave}
 		items := findItemsForSlave(slave, allitems)
 		if items == nil || len(items) <= 0 {
-			log.Printf("No items available for modbus slave %s", mc.Slave.IPAddress)
+			usvc.Error("Modbus TCP", "No items available for modbus slave %s", mc.Slave.IPAddress)
 			continue
 		}
 
@@ -82,7 +79,7 @@ func buildDatasets(slaves []*ModbusSlaveItem, allitems []*ModbusItem) {
 		startindex := 0
 		for n, item := range items {
 			if n-startindex > 0 && item.ModbusAddress-items[n-1].ModbusAddress > 1 {
-				log.Printf("n: %d, startindex: %d", n, startindex)
+				usvc.Trace("Modbus TCP", "n: %d, startindex: %d", n, startindex)
 				ds.count = uint16(n - startindex)
 				ds.items = items[startindex:n]
 				mc.Datasets = append(mc.Datasets, ds)
@@ -100,9 +97,9 @@ func buildDatasets(slaves []*ModbusSlaveItem, allitems []*ModbusItem) {
 
 		if TRACE {
 			for dno, ds := range mc.Datasets {
-				log.Printf("ds: %d, start: %d, count: %d, len(items): %d, offset: %d", dno, ds.start, ds.count, len(ds.items), slave.Offset)
+				usvc.Trace("Modbus TCP", "ds: %d, start: %d, count: %d, len(items): %d, offset: %d", dno, ds.start, ds.count, len(ds.items), slave.Offset)
 				for i, item := range ds.items {
-					log.Printf("item: %d, name: %s", i, item.Name)
+					usvc.Trace("Modbus TCP", "item: %d, name: %s", i, item.Name)
 				}
 			}
 		}
@@ -111,13 +108,14 @@ func buildDatasets(slaves []*ModbusSlaveItem, allitems []*ModbusItem) {
 		modbusConnections = append(modbusConnections, mc)
 	}
 
-	log.Printf("Done building datasets for %d Modbus slaves!", len(slaves))
+	usvc.Trace("Modbus TCP", "Done building datasets for %d Modbus slaves!", len(slaves))
 }
 
 func findItemsForSlave(slave *ModbusSlaveItem, allitems []*ModbusItem) []*ModbusItem {
 	result := make([]*ModbusItem, 0)
 	for _, item := range allitems {
 		if item.ModbusSlaveID == slave.ID {
+			item.ModbusSlave = *slave
 			result = append(result, item)
 		}
 	}
@@ -135,7 +133,7 @@ func (mc *modbusConnection) checkConnection() error {
 	if !mc.Connected {
 		if mc.Err = mc.client.Open(); mc.Err == nil {
 			mc.Connected = true
-			logger.Trace("Modbus service", "Modbus client connection successful for slave: %s", mc.Slave.IPAddress)
+			usvc.Trace("Modbus TCP", "Modbus client connection successful for slave: %s", mc.Slave.IPAddress)
 			mc.ErrStr = ""
 			mc.Slave.ErrorMsg = ""
 		} else {
@@ -182,7 +180,7 @@ func (mc *modbusConnection) runSlaveWorker() {
 					}
 
 					if mc.Err != nil {
-						log.Printf("Failure to read registers on modbus slave %s, start: %d, count: %d, error: %s",
+						usvc.Error("Mobus TCP", "Failure to read registers on modbus slave %s, start: %d, count: %d, error: %s",
 							mc.Slave.IPAddress, ds.start, ds.count, mc.Err.Error())
 
 						mc.ErrStr = mc.Err.Error()
@@ -210,17 +208,13 @@ func (mc *modbusConnection) runSlaveWorker() {
 							msg.Points[n].Name = ds.items[n].Name
 							msg.Points[n].Value = value
 
-							ddnats.Publish("process.actual", msg.Points[n])
+							usvc.Publish("process.actual", msg.Points[n])
 
-							if TRACE {
-								log.Printf("ds: %d, name: %s, address: %d, raw value: %v, value: %f", dsno, item.Name, int(ds.start)+n, rawvalue, value)
-								log.Printf("msg.Time: %v, msg.Name: %s, msg.Value: %v, msg.Quality: %d",
-									msg.Points[n].Time, msg.Points[n].Name, msg.Points[n].Value, msg.Points[n].Quality)
-							}
+							usvc.Trace("Modbus TCP", "ds: %d, name: %s, address: %d, raw value: %v, value: %f", dsno, item.Name, int(ds.start)+n, rawvalue, value)
+							usvc.Trace("Modbus TCP", "msg.Time: %v, msg.Name: %s, msg.Value: %v, msg.Quality: %d",
+								msg.Points[n].Time, msg.Points[n].Name, msg.Points[n].Value, msg.Points[n].Quality)
 						}
 					}
-
-					// ddnats.Publish("forward.process", msg)
 
 					mc.Slave.LastRun = time.Now().UTC().Format("2006-01-02 15:04:05")
 				}
@@ -275,7 +269,7 @@ func checkSlaveIP(posteditem *BulkChangeModbusItem) (uint, error) {
 	}
 
 	if strings.TrimSpace(posteditem.IPAddress) == "" {
-		return 0, logger.Error("Modbus service", "Failed to check empty modbus slave IP")
+		return 0, usvc.Error("Modbus TCP", "Failed to check empty modbus slave IP")
 	}
 
 	var item ModbusSlaveItem
@@ -284,7 +278,6 @@ func checkSlaveIP(posteditem *BulkChangeModbusItem) (uint, error) {
 		item.IPAddress = posteditem.IPAddress
 		item.Name = posteditem.IPAddress
 		AddModbusSlave(&item)
-		log.Println("Creating ip:", posteditem.IPAddress)
 		return checkSlaveIP(posteditem)
 	}
 	return item.ID, err
@@ -293,7 +286,7 @@ func checkSlaveIP(posteditem *BulkChangeModbusItem) (uint, error) {
 func startModbusSlave(slave *ModbusSlaveItem) error {
 	mc := getConnectionForSlave(slave)
 	if mc == nil {
-		return logger.Error("Modbus service", "Failed to start modbus slave, no connection object found")
+		return usvc.Error("Modbus TCP", "Failed to start modbus slave, no connection object found")
 	}
 
 	slave.State = ModbusSlaveStateRunning
@@ -303,29 +296,34 @@ func startModbusSlave(slave *ModbusSlaveItem) error {
 func stopModbusSlave(slave *ModbusSlaveItem) error {
 	mc := getConnectionForSlave(slave)
 	if mc == nil {
-		return logger.Error("Modbus service", "Failed to stop modbus slave, no connection object found")
+		return usvc.Error("Modbus TCP", "Failed to stop modbus slave, no connection object found")
 	}
 
 	slave.State = ModbusSlaveStateStopped
 	return nil
 }
 
-func InitModbusSlaves() {
-	logger.Trace("Modbus service", "Initializing modbus slaves ...")
+func InitModbusSlaves(svc *ddsvc.DdUsvc) {
+	TRACE = svc.Context.Trace
+
+	usvc = svc
+	usvc.Trace("Modbus TCP", "Initializing modbus slaves ...")
 	abortExistingConnections()
 
 	engineLock.Lock()
 	defer engineLock.Unlock()
 	db.DB.Find(&slaves)
 	db.DB.Find(&datapoints)
-	for _, i := range datapoints {
-		log.Printf("name: %s, addr: %d, fc: %d, min: %d, max: %d, plcmin: %d, plcmax: %d",
-			i.Name, i.ModbusAddress, i.FunctionCode, i.RangeMin, i.RangeMax, i.PlcRangeMin, i.PlcRangeMax)
+	if svc.Context.Trace {
+		for _, i := range datapoints {
+			usvc.Trace("Modbus TCP", "name: %s, addr: %d, fc: %d, min: %d, max: %d, plcmin: %d, plcmax: %d",
+				i.Name, i.ModbusAddress, i.FunctionCode, i.RangeMin, i.RangeMax, i.PlcRangeMin, i.PlcRangeMax)
+		}
 	}
 
 	buildDatasets(slaves, datapoints)
 
-	logger.Trace("Modbus service", "Done initializing modbus engine!")
+	usvc.Trace("Modbus TCP", "Done initializing modbus engine!")
 }
 
 func StartModbusSlaves(slaves *ModbusSlaveItems) error {
@@ -412,8 +410,14 @@ func GetModbusSlaves() []*ModbusSlaveItem {
 }
 
 func RunModbusEngine() {
-	log.Printf("Running modbus engine, number of connections: %d", len(modbusConnections))
+	usvc.Info("Modbus TCP", "Running modbus engine, number of connections: %d", len(modbusConnections))
 	for _, mc := range modbusConnections {
 		go mc.runSlaveWorker()
 	}
+}
+
+func RestartModbusEngine() {
+	usvc.Info("Modbus TCP", "Restarting modbus engine")
+	InitModbusSlaves(usvc)
+	RunModbusEngine()
 }

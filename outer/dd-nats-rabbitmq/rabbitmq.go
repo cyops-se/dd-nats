@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"dd-nats/common/logger"
 	"dd-nats/common/types"
 
-	"github.com/nats-io/nats.go"
 	"github.com/sirius1024/go-amqp-reconnect/rabbitmq"
 	"github.com/streadway/amqp"
 )
@@ -45,13 +43,13 @@ type RabbitMQMetaItem struct {
 func (emitter *RabbitMQEmitter) InitEmitter() error {
 	if len(emitter.Urls) == 0 {
 		emitter.err = fmt.Errorf("Failed to connect RabbitMQ cluster, urls parameter empty")
-		logger.Log("error", "RabbitMQ init", emitter.err.Error())
+		svc.Log("error", "RabbitMQ init", emitter.err.Error())
 		return emitter.err
 	}
 
 	emitter.connection, emitter.err = rabbitmq.DialCluster(emitter.Urls)
 	if emitter.err != nil {
-		logger.Log("error", "RabbitMQ init", fmt.Sprintf("Failed to connect RabbitMQ cluster [%s]: %v", emitter.Urls, emitter.err.Error()))
+		svc.Log("error", "RabbitMQ init", fmt.Sprintf("Failed to connect RabbitMQ cluster [%s]: %v", emitter.Urls, emitter.err.Error()))
 		return emitter.err
 	}
 
@@ -67,7 +65,7 @@ func (emitter *RabbitMQEmitter) InitEmitter() error {
 	)
 
 	if emitter.err != nil {
-		logger.Log("error", "RabbitMQ init", fmt.Sprintf("Failed to declare queue: %v", emitter.err.Error()))
+		svc.Error("RabbitMQ init", fmt.Sprintf("Failed to declare queue: %v", emitter.err.Error()))
 		return emitter.err
 	}
 
@@ -76,15 +74,17 @@ func (emitter *RabbitMQEmitter) InitEmitter() error {
 	go emitter.syncMetaRabbit()
 
 	emitter.initialized = true
-	logger.Log("info", "RABBITMQ emitter", fmt.Sprintf("RabbitMQ server connected: %s", emitter.Urls))
+	svc.Info("RABBITMQ emitter", fmt.Sprintf("RabbitMQ server connected: %s", emitter.Urls))
 	return nil
 }
 
-func (emitter *RabbitMQEmitter) processDataPointHandler(nmsg *nats.Msg) {
+func (emitter *RabbitMQEmitter) processDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(nmsg.Data, &dp); err == nil {
+	if err := json.Unmarshal(data, &dp); err == nil {
 		emitter.ProcessMessage(dp)
 	}
+
+	return nil
 }
 
 func (emitter *RabbitMQEmitter) ProcessMessage(dp types.DataPoint) {
@@ -114,11 +114,11 @@ func (emitter *RabbitMQEmitter) processMessages() {
 			})
 
 		if emitter.err != nil {
-			logger.Log("error", "RabbitMQ emitter", fmt.Sprintf("Failed to publish message: %v (processMessages)", emitter.err.Error()))
+			svc.Error("RabbitMQ emitter", fmt.Sprintf("Failed to publish message: %v (processMessages)", emitter.err.Error()))
 			continue
 		}
 
-		// logger.Log("info", "RabbitMQ emitter", fmt.Sprintf("Message published: %s (processMessages)", string(body)))
+		// ddsvc.Log("info", "RabbitMQ emitter", fmt.Sprintf("Message published: %s (processMessages)", string(body)))
 	}
 }
 
@@ -176,6 +176,6 @@ func (emitter *RabbitMQEmitter) sendMetaRabbit(dp *types.DataPointMeta) {
 		})
 
 	if emitter.err != nil {
-		logger.Log("error", "RabbitMQ emitter", fmt.Sprintf("Failed to publish meta message: %v", emitter.err.Error()))
+		svc.Error("RabbitMQ emitter", fmt.Sprintf("Failed to publish meta message: %v", emitter.err.Error()))
 	}
 }

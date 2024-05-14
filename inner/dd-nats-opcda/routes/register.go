@@ -2,9 +2,12 @@ package routes
 
 import "dd-nats/common/ddsvc"
 
+var usvc *ddsvc.DdUsvc
+
 func RegisterRoutes(svc *ddsvc.DdUsvc) {
-	registerSystemRoutes(svc)
-	registerGroupRoutes(svc)
-	registerTagRoutes(svc)
-	registerOpcRoutes(svc)
+	usvc = svc
+	registerSystemRoutes()
+	registerGroupRoutes()
+	registerTagRoutes()
+	registerOpcRoutes()
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func RegisterSystemRoutes(api fiber.Router) {
+func registerSystemRoutes(api fiber.Router) {
 	api.Get("/system/sysinfo", GetSysInfo)
 }
 

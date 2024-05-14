@@ -1,8 +1,7 @@
 package web
 
 import (
-	"dd-nats/common/ddnats"
-	"dd-nats/common/types"
+	"dd-nats/common/ddsvc"
 	"dd-nats/svcs/dd-ui/routes"
 	"embed"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/websocket/v2"
-	"github.com/nats-io/nats.go"
 )
 
 //go:embed static/index.html
@@ -50,7 +48,7 @@ func handlePanic() {
 	}
 }
 
-func RunWeb(args types.Context) {
+func RunWeb(usvc *ddsvc.DdUsvc) {
 	defer handlePanic()
 
 	go runSocketActions()
@@ -61,7 +59,7 @@ func RunWeb(args types.Context) {
 
 	// Set a file transfer limit to 50MB
 	app := fiber.New(fiber.Config{StrictRouting: true, BodyLimit: 50 * 1024 * 1024})
-	if args.Trace {
+	if usvc.Context.Trace {
 		app.Use(logger.New())
 	}
 
@@ -92,15 +90,14 @@ func RunWeb(args types.Context) {
 	}))
 
 	api := app.Group("/api")
-	routes.RegisterSystemRoutes(api)
-	routes.RegisterNatsRoutes(api)
-	routes.RegisterFileTransferRoutes(api)
+	routes.RegisterRoutes(api, usvc)
 
-	ddnats.Subscribe(">", func(m *nats.Msg) {
-		broadcast <- &WebSocketMessage{Topic: m.Subject, Message: string(m.Data)}
+	usvc.Subscribe(">", func(topic string, responseTopic string, data []byte) error {
+		broadcast <- &WebSocketMessage{Topic: topic, Message: string(data)}
+		return nil
 	})
 
-	app.Listen(fmt.Sprintf(":%d", args.Port))
+	app.Listen(fmt.Sprintf(":%d", usvc.Context.Port))
 
 	select {}
 }

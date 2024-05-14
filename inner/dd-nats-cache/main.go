@@ -10,7 +10,7 @@ import (
 func main() {
 	if svc := ddsvc.InitService("dd-nats-cache"); svc != nil {
 		if app.Init(svc) {
-			routes.RegisterRoutes()
+			routes.RegisterRoutes(svc)
 			svc.RunService(app.RunApp)
 		}
 	}

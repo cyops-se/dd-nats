@@ -1,7 +1,6 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/ddsvc"
 	"encoding/binary"
 	"fmt"
@@ -9,11 +8,15 @@ import (
 	"net"
 	"strings"
 	"time"
-
-	"github.com/nats-io/nats.go"
 )
 
-var forwarder chan *nats.Msg = make(chan *nats.Msg, 2000)
+type ForwardMsg struct {
+	subject string
+	data    []byte
+}
+
+// var forwarder chan *nats.Msg = make(chan *nats.Msg, 2000)
+var forwarder chan ForwardMsg = make(chan ForwardMsg, 2000)
 var udpconn net.Conn
 
 var packet []byte
@@ -44,7 +47,7 @@ func runService(svc *ddsvc.DdUsvc) {
 	topics := strings.Split(topicstr, ",")
 
 	for _, topic := range topics {
-		ddnats.Subscribe(strings.TrimSpace(topic), callbackHandler)
+		svc.Subscribe(strings.TrimSpace(topic), callbackHandler)
 	}
 
 	// Sleep until interrupted
@@ -57,9 +60,10 @@ func connectUDP(host string, port int) (err error) {
 	return err
 }
 
-func callbackHandler(msg *nats.Msg) {
+func callbackHandler(topic string, responseTopic string, data []byte) error {
 	// Use of channel to serialize NATS message callbacks
-	forwarder <- msg
+	forwarder <- ForwardMsg{subject: topic, data: data}
+	return nil
 }
 
 // packet layout
@@ -79,11 +83,11 @@ func sendUDP() {
 	for {
 		msg := <-forwarder
 		msgid++
-		sdata := []byte(msg.Subject) // full subject payload
+		sdata := []byte(msg.subject) // full subject payload
 		ssize := len(sdata)
-		remainingsize := len(msg.Data)
+		remainingsize := len(msg.data)
 
-		totalsize := len(msg.Data)
+		totalsize := len(msg.data)
 		totalpackets := (totalsize + ssize) / (packetlen - 24) // overhead is 24 bytes
 		if totalsize%packetlen != 0 {
 			totalpackets++
@@ -109,7 +113,7 @@ func sendUDP() {
 			}
 
 			binary.LittleEndian.PutUint32(packet[headersize:], uint32(payloadsize))
-			copy(packet[headersize+4:], msg.Data[index:payloadsize+index])
+			copy(packet[headersize+4:], msg.data[index:payloadsize+index])
 			udpconn.Write(packet[:headersize+4+payloadsize])
 			ssize = 0
 

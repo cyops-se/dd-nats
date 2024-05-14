@@ -1,12 +1,9 @@
 package main
 
 import (
-	"dd-nats/common/ddnats"
 	"dd-nats/common/types"
 	"encoding/json"
 	"log"
-
-	"github.com/nats-io/nats.go"
 )
 
 type allFilteredPoints struct {
@@ -19,11 +16,11 @@ type allFilteredPointsResponse struct {
 }
 
 func registerFilterRoutes() {
-	ddnats.Subscribe("usvc.process.filter.getall", getAllFilteredPoints)
-	ddnats.Subscribe("usvc.process.filter.setfilter", setFilterPoint)
+	svc.Subscribe("usvc.process.filter.getall", getAllFilteredPoints)
+	svc.Subscribe("usvc.process.filter.setfilter", setFilterPoint)
 }
 
-func getAllFilteredPoints(nmsg *nats.Msg) {
+func getAllFilteredPoints(topic string, responseTopic string, data []byte) error {
 	var response allFilteredPointsResponse
 	response.Success = true
 
@@ -34,18 +31,18 @@ func getAllFilteredPoints(nmsg *nats.Msg) {
 
 	response.Items = items
 
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }
 
-func setFilterPoint(nmsg *nats.Msg) {
+func setFilterPoint(topic string, responseTopic string, data []byte) error {
 	var response types.StatusResponse
 	response.Success = true
 
 	var items allFilteredPoints
-	if err := json.Unmarshal(nmsg.Data, &items); err != nil {
+	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
-		log.Println("request body:", string(nmsg.Data), ", error:", err.Error())
+		log.Println("request body:", string(data), ", error:", err.Error())
 	} else {
 		for _, item := range items.Items {
 			datapoints[item.DataPoint.Name] = item
@@ -56,5 +53,5 @@ func setFilterPoint(nmsg *nats.Msg) {
 		}
 	}
 
-	ddnats.Respond(nmsg, response)
+	return svc.Publish(responseTopic, response)
 }
