@@ -3,9 +3,6 @@ package types
 import (
 	"database/sql"
 	"time"
-
-	mqtt "github.com/eclipse/paho.golang/paho"
-	"github.com/nats-io/nats.go"
 )
 
 type SystemInformation struct {
@@ -42,16 +39,16 @@ type IntMessage struct {
 	Value int `json:"value"`
 }
 
-const (
-	ConnectionTypeUnknown = 0
-	ConnectionTypeNATS    = 1
-	ConnectionTypeMQTT    = 2
-)
+// const (
+// 	ConnectionTypeUnknown = 0
+// 	ConnectionTypeNATS    = 1
+// 	ConnectionTypeMQTT    = 2
+// )
 
-type Connection struct {
-	Error      error
-	ConType    int
-	NatsCon    *nats.Conn
-	MqttClient *mqtt.Client
-	MqttCon    *mqtt.Connack
-}
+// type Connection struct {
+// 	Error      error
+// 	ConType    int
+// 	NatsCon    *nats.Conn
+// 	MqttClient *mqtt.Client
+// 	MqttCon    *mqtt.Connack
+// }

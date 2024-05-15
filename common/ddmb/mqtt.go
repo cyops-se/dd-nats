@@ -9,9 +9,9 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/eclipse/paho.golang/paho"
 	mqtt "github.com/eclipse/paho.golang/paho"
 )
 
@@ -22,17 +22,20 @@ type MqttRequestHandle struct {
 
 type MqttWildcardEntry struct {
 	topic   string
+	prefix  string
 	handler IMessageHandler
 }
 
 type MqttMessageBroker struct {
 	Error            error
+	ConnectionURL    string
 	NetCon           net.Conn
 	MqttClient       *mqtt.Client
 	MqttCon          *mqtt.Connack
 	Handlers         map[string]IMessageHandler
 	WildcardHandlers []MqttWildcardEntry
 	RequestHandles   map[string]MqttRequestHandle
+	mutex            sync.Mutex
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -60,12 +63,14 @@ func (mb *MqttMessageBroker) Connect(connectionUrl string) error {
 		log.Fatalf("Unable to parse provided URL %s, error: %s", connectionUrl, err)
 	}
 
+	mb.ConnectionURL = connectionUrl
 	server := lu.Host
 
-	log.Printf("Dialing server: %s", server)
 	mb.NetCon, mb.Error = net.Dial("tcp", server)
-	if mb.Error != nil {
-		log.Fatalf("Failed to dial server at %s: %s", server, mb.Error)
+	for mb.Error != nil {
+		log.Printf("Failed to connect to MQTT server, retrying in 5 seconds, error: %s", mb.Error.Error())
+		time.Sleep(5 * time.Second)
+		mb.NetCon, mb.Error = net.Dial("tcp", server)
 	}
 
 	log.Printf("New client at %s", server)
@@ -102,11 +107,24 @@ func (mb *MqttMessageBroker) Connect(connectionUrl string) error {
 
 				return true, nil
 			}},
+		OnClientError: func(err error) {
+			fmt.Printf("Client error detected: %s\n", err.Error())
+			if mb.mutex.TryLock() {
+				mb.reconnect()
+			}
+		},
+		OnServerDisconnect: func(d *mqtt.Disconnect) {
+			if d.Properties != nil {
+				fmt.Printf("server requested disconnect: %s\n", d.Properties.ReasonString)
+			} else {
+				fmt.Printf("server requested disconnect; reason code: %d\n", d.ReasonCode)
+			}
+		},
 		Conn: mb.NetCon,
 	})
 
 	log.Printf("Connecting %s", server)
-	cp := &mqtt.Connect{KeepAlive: 30, CleanStart: true, Username: "", Password: []byte("")}
+	cp := &mqtt.Connect{KeepAlive: 30, CleanStart: false, UsernameFlag: false, PasswordFlag: false}
 
 	mb.MqttCon, mb.Error = mb.MqttClient.Connect(context.Background(), cp)
 	if mb.Error != nil {
@@ -123,6 +141,35 @@ func (mb *MqttMessageBroker) Connect(connectionUrl string) error {
 	log.Printf("Connected to MQTT server: %s", connectionUrl)
 
 	return nil
+}
+
+func (mb *MqttMessageBroker) reconnect() {
+	log.Printf("Attempting to reconnect")
+	mb.MqttClient.Disconnect(&mqtt.Disconnect{ReasonCode: 0}) // Hopefully cleans up stuff
+	mb.MqttClient = nil
+
+	if mb.Connect(mb.ConnectionURL) == nil && mb.Error == nil {
+		log.Printf("mqtt connection re-established, re-subscribing topics")
+		for topic := range mb.Handlers {
+			log.Printf("resubscribing regular topic: %s", topic)
+			_, mb.Error = mb.MqttClient.Subscribe(context.Background(), &mqtt.Subscribe{
+				Subscriptions: []mqtt.SubscribeOptions{
+					{Topic: topic, QoS: 0, NoLocal: true},
+				},
+			})
+		}
+
+		for _, entry := range mb.WildcardHandlers {
+			log.Printf("resubscribing wildcard topic: %s", entry.topic)
+			_, mb.Error = mb.MqttClient.Subscribe(context.Background(), &mqtt.Subscribe{
+				Subscriptions: []mqtt.SubscribeOptions{
+					{Topic: entry.topic, QoS: 0, NoLocal: true},
+				},
+			})
+		}
+	}
+
+	mb.mutex.Unlock()
 }
 
 func (mb *MqttMessageBroker) Disconnect() error {
@@ -153,7 +200,7 @@ func (mb *MqttMessageBroker) PublishWithReponse(topic string, responseTopic stri
 	// Make topic MQTT
 	topic = strings.ReplaceAll(topic, ".", "/") // As dot '.' is default topic separator, we need to MQTTify it
 
-	pb := &paho.Publish{
+	pb := &mqtt.Publish{
 		Topic:   topic,
 		Payload: payload,
 		QoS:     0,
@@ -177,19 +224,26 @@ func (mb *MqttMessageBroker) Request(topic string, data interface{}) ([]byte, er
 	mch := make(chan *mqtt.PublishReceived, 8)
 	mb.RequestHandles[id] = MqttRequestHandle{id: id, mch: mch}
 
-	_, mb.Error = mb.MqttClient.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: []paho.SubscribeOptions{
+	_, mb.Error = mb.MqttClient.Subscribe(context.Background(), &mqtt.Subscribe{
+		Subscriptions: []mqtt.SubscribeOptions{
 			{Topic: id, QoS: 0, NoLocal: true},
 		},
 	})
 
 	mb.PublishWithReponse(topic, id, data)
 
-	pr := <-mch
+	t := time.NewTimer(2 * time.Second)
+	select {
+	case pr := <-mch:
+		unsub := &mqtt.Unsubscribe{Topics: []string{id}}
+		mb.MqttClient.Unsubscribe(context.Background(), unsub)
+		return pr.Packet.Payload, nil
 
-	unsub := &mqtt.Unsubscribe{Topics: []string{id}}
-	mb.MqttClient.Unsubscribe(context.Background(), unsub)
-	return pr.Packet.Payload, nil
+	case <-t.C:
+		break
+	}
+
+	return nil, fmt.Errorf("request timed out")
 }
 
 func (mb *MqttMessageBroker) Subscribe(topic string, callback IMessageHandler) error {
@@ -201,20 +255,21 @@ func (mb *MqttMessageBroker) Subscribe(topic string, callback IMessageHandler) e
 	topic = strings.ReplaceAll(topic, ".", "/") // As dot '.' is default topic separator, we need to MQTTify it
 	topic = strings.ReplaceAll(topic, ">", "#") // As dot '>' is default remaining path wildcard, we need to MQTTify it
 
-	_, mb.Error = mb.MqttClient.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: []paho.SubscribeOptions{
+	_, mb.Error = mb.MqttClient.Subscribe(context.Background(), &mqtt.Subscribe{
+		Subscriptions: []mqtt.SubscribeOptions{
 			{Topic: topic, QoS: 0, NoLocal: true},
 		},
 	})
 
 	if mb.Error == nil {
 		if strings.Contains(topic, "#") {
-			topic = strings.Split(topic, "#")[0]
 			mb.addWildcard(topic, callback)
+			log.Printf("Wildcard subscription added: %s", topic)
 		} else {
 			if _, ok := mb.Handlers[topic]; !ok {
 				mb.Handlers[topic] = callback
 			}
+			log.Printf("Regular subscription added: %s", topic)
 		}
 	}
 
@@ -225,7 +280,7 @@ func (mb *MqttMessageBroker) Subscribe(topic string, callback IMessageHandler) e
 // if the specified topic matches
 func (mb *MqttMessageBroker) checkWildcard(topic string) (handler IMessageHandler, ok bool) {
 	for _, entry := range mb.WildcardHandlers {
-		if strings.HasPrefix(topic, entry.topic) {
+		if strings.HasPrefix(topic, entry.prefix) {
 			return entry.handler, true
 		}
 	}
@@ -235,8 +290,9 @@ func (mb *MqttMessageBroker) checkWildcard(topic string) (handler IMessageHandle
 
 // Adds a handler for a specific prefix topic (wildcard)
 func (mb *MqttMessageBroker) addWildcard(topic string, handler IMessageHandler) {
-	if _, ok := mb.checkWildcard(topic); !ok {
-		entry := MqttWildcardEntry{topic: topic, handler: handler}
+	prefix := strings.Split(topic, "#")[0]
+	if _, ok := mb.checkWildcard(prefix); !ok {
+		entry := MqttWildcardEntry{topic: topic, prefix: prefix, handler: handler}
 		mb.WildcardHandlers = append(mb.WildcardHandlers, entry)
 	}
 }

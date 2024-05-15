@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/cyops-se/opc v0.3.7
+	github.com/eclipse/paho.golang v0.21.0
 	github.com/go-ole/go-ole v1.2.6
 	github.com/gofiber/fiber/v2 v2.32.0
 	github.com/gofiber/websocket/v2 v2.0.21
@@ -21,7 +22,6 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.0.4 // indirect
-	github.com/eclipse/paho.golang v0.21.0 // indirect
 	github.com/fasthttp/websocket v1.5.0 // indirect
 	github.com/goburrow/serial v0.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -42,13 +42,11 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/savsgio/gotils v0.0.0-20211223103454-d0aaa54c5899 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.35.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	golang.org/x/crypto v0.19.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 )

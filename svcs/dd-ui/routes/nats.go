@@ -10,21 +10,21 @@ type natsMsg struct {
 }
 
 func registerNatsRoutes(api fiber.Router) {
-	api.Post("/nats/request", RequestNats)
+	api.Post("/nats/request", RequestMessageBroker)
 }
 
-func RequestNats(c *fiber.Ctx) error {
+func RequestMessageBroker(c *fiber.Ctx) error {
 	var webrequest natsMsg
 
 	if err := c.BodyParser(&webrequest); err != nil {
-		usvc.Error("NATS request failed", "Failed to map provided data to natsMsg: %s", err.Error())
+		usvc.Error("Message broker request failed", "Failed to map provided data to natsMsg: %s", err.Error())
 		return c.Status(503).SendString(err.Error())
 	}
 
 	if data, err := usvc.Request(webrequest.Subject, webrequest.Payload); err == nil {
 		return c.Status(fiber.StatusOK).SendString(string(data)) // ddnats.Respond() already serialized the response to a JSON string
 	} else {
-		usvc.Error("NATS request failed", "request: %s, failed: %s", webrequest.Subject, err.Error())
+		usvc.Error("Message broker request failed", "request: %s, failed: %s", webrequest.Subject, err.Error())
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 }

@@ -15,7 +15,7 @@
 ## Overview
 The dd-nats repo contains a set of micro-services (usvcs) that together provide a solution for export of ICS (Industrial Control System) data and files over a data-diode. It currently contain collectors for OPC DA and Modbus TCP, but following the usvc architecture, it is easy to add new collectors for other sources. On the other side of the diode, the data is received by a set of usvcs that store the data in a database and/or forward it to other systems.
 
-As message broker, the usvcs architecture on both sides of the diode use [NATS](https://nats.io/), a lightweight, single executable, high-performance messaging system. You are encouraged to read more about NATS unless you are already comfortable with the concept of message brokers. Both publish/subscribe and request/reply patterns are used by the applications in this repository.
+As message brokers, the usvcs architecture on both sides of the diode use either [NATS](https://nats.io/) or [MQTT](https://mqtt.org/). These are both lightweight and high-performance messaging system. You are encouraged to read more about NATS and MQTT unless you are already comfortable with the concept of message brokers. Both publish/subscribe and request/reply patterns are used by the applications in this repository. The repo continue to carry the name ***dd-nats*** even though it now supports additional message brokers like MQTT by implementing the specified interfaces in ```ddmb```.
 
 ![conceptual overview](./assets/dd-nats-overview-1.png)
 

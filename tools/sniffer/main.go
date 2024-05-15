@@ -14,11 +14,13 @@ func main() {
 
 	if mb := ddmb.NewMessageBroker(*url); mb != nil {
 		if err := mb.Connect(*url); err != nil {
-			log.Printf("Exiting application due to NATS connection failure, err: %s", err.Error())
+			log.Printf("Exiting application due to message broker connection failure, err: %s", err.Error())
 			return
 		}
 
-		mb.Subscribe(*subject, msgHandler)
+		if err := mb.Subscribe(*subject, msgHandler); err != nil {
+			log.Printf("Failed to subscribe topic: %s, error: %s", *subject, err.Error())
+		}
 	}
 
 	runtime.Goexit()
