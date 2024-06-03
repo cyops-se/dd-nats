@@ -50,5 +50,3 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 )
-
-replace github.com/cyops-se/opc => c:\Development\src\cyops-se\opc
