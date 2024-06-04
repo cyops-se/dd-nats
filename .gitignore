@@ -29,3 +29,8 @@ incoming
 /svcs/dd-logger/dd-logger
 /svcs/dd-ui/dd-ui
 *.gz
+/dist
+/inner/dd-nats-cache/dd-nats-cache
+/outer/dd-nats-influxdb/dd-nats-influxdb
+/tools/logflood/logflood
+/tools/sniffer/sniffer
