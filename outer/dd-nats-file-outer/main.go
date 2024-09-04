@@ -51,7 +51,7 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	// Listen for incoming files
 	ctx = initContext(".", svc)
 	svc.Subscribe("inner.file.start", fileStartHandler)
-	svc.Subscribe("inner.file.block.*", fileBlockHandler)
+	svc.Subscribe("inner.file.block.>", fileBlockHandler)
 	svc.Subscribe("inner.file.end", fileEndHandler)
 }
 
@@ -67,6 +67,8 @@ func fileEndHandler(topic string, responseTopic string, data []byte) error {
 	if entry, ok := register[end.TransferId]; ok {
 		if !entry.failed && entry.block.FileIndex == uint64(entry.start.Size) {
 			fileComplete(entry)
+		} else {
+			ctx.svc.Trace("File end", "FileIndex (%d) != size (%d): %s", entry.block.FileIndex, entry.start.Size, end.TransferId)
 		}
 	}
 

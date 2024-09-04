@@ -84,11 +84,11 @@ func sendUDP() {
 		msg := <-forwarder
 		msgid++
 		sdata := []byte(msg.subject) // full subject payload
-		ssize := len(sdata)
+		ssize := len(sdata)          // subject size
 		remainingsize := len(msg.data)
-
-		totalsize := len(msg.data)
-		totalpackets := (totalsize + ssize) / (packetlen - 24) // overhead is 24 bytes
+		totalsize := remainingsize
+		// totalpackets := (totalsize + ssize) / (packetlen - 20) // overhead is 20 bytes
+		totalpackets := totalsize / (packetlen - 20 - ssize) // overhead is 20 bytes + size of subject (ssize)
 		if totalsize%packetlen != 0 {
 			totalpackets++
 		}
@@ -97,25 +97,44 @@ func sendUDP() {
 		index := 0 // current position in the full message payload buffer
 
 		for packetno < totalpackets {
-			headersize := 4*5 + ssize
 			binary.LittleEndian.PutUint32(packet, uint32(msgid))
 			binary.LittleEndian.PutUint32(packet[4:], uint32(totalsize))
 			binary.LittleEndian.PutUint32(packet[8:], uint32(totalpackets))
 			binary.LittleEndian.PutUint32(packet[12:], uint32(packetno))
 			binary.LittleEndian.PutUint32(packet[16:], uint32(ssize))
-			copy(packet[20:], sdata)
 
-			remainingspace := packetlen - headersize
-			payloadsize := remainingsize
-
-			if payloadsize > remainingspace {
-				payloadsize = remainingspace - 4 // include the payload size slot
+			// only first packet should have a subject
+			if packetno == 0 || ssize > 0 {
+				copy(packet[20:], sdata)
 			}
 
+			headersize := 4*5 + ssize // the packet header should be 5 x 32bits (4 bytes) plus length of subject (in bytes)
+
+			// remaining space in the current packet to send
+			remainingspace := packetlen - headersize - 4 // we have to include the payload size space
+
+			// remaining size of the data to send
+			payloadsize := remainingsize
+
+			// if the amount of data to be sent is larger than the remaining space in the packet,
+			// we split the remaining data into multiple payloads, filling this packet before sending it
+			if payloadsize >= remainingspace {
+				payloadsize = remainingspace
+			}
+
+			// put in the size of the packet payload after the subject
 			binary.LittleEndian.PutUint32(packet[headersize:], uint32(payloadsize))
-			copy(packet[headersize+4:], msg.data[index:payloadsize+index])
-			udpconn.Write(packet[:headersize+4+payloadsize])
-			ssize = 0
+
+			// put in the actual data payload, after we make sure the sizes are within limits
+			psize := headersize + 4 + payloadsize
+			if psize <= packetlen {
+				copy(packet[headersize+4:], msg.data[index:payloadsize+index])
+				udpconn.Write(packet[:headersize+4+payloadsize])
+			} else {
+				log.Printf("ERROR: trying to stuff the packet with more than fits, psize: %d, headersize: %d, payloadsize: %d", psize, headersize, payloadsize)
+			}
+
+			ssize = 0 // signals that subject shouldn't be included in subsequent packets
 
 			remainingsize -= payloadsize
 			index += payloadsize

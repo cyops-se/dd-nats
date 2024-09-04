@@ -83,7 +83,8 @@ func readUDP(svc *ddsvc.DdUsvc, prefix string) {
 		subjectsize := binary.LittleEndian.Uint32(packet[16:])
 		msg := &msgInfo{msgid: msgid, totalsize: totalsize, totalpackets: totalpackets, packetno: packetno, lastpacket: packetno}
 
-		if packetno == 0 {
+		// we only get subject with the first packet
+		if packetno == 0 || subjectsize > 0 {
 			msg.subject = string(packet[20 : 20+subjectsize])
 			msg.payload = make([]byte, msg.totalsize)
 		}
