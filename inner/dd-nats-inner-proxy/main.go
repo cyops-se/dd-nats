@@ -77,8 +77,8 @@ func sendUDP() {
 	packetlen := 1480
 	packet = make([]byte, packetlen)
 	packetcount := uint64(0)
-	interval := uint64(20) // number of packets before a break
-	delay := 50            // in millisec
+	interval := uint64(1000) // number of packets before a break
+	delay := 50              // in millisec
 
 	for {
 		msg := <-forwarder

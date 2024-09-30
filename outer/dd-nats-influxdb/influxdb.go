@@ -71,7 +71,7 @@ func (emitter *InfluxDBEmitter) processMessages() {
 }
 
 func (emitter *InfluxDBEmitter) connectdb() error {
-	host, _ := url.Parse("http://localhost:8086")
+	host, _ := url.Parse(fmt.Sprintf("http://%s:%d", emitter.Host, emitter.Port))
 	emitter.client, emitter.err = influxd.NewClient(influxd.Config{
 		URL: *host,
 	})

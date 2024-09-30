@@ -140,6 +140,7 @@
       initialize () {},
 
       refresh () {
+        if (this.selected === '') return
         var request = { subject: 'usvc.' + this.usvc + '.' + this.selected.key + '.settings.get', payload: {} }
         ApiService.post('nats/request', request)
           .then(response => {
@@ -150,8 +151,9 @@
               this.items.push({ key: key, value: value })
             })
           }).catch(response => {
+            console.log(response)
             console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to get groups: ' + response.message)
+            this.$notification.error('Failed to get settings: ' + response.message)
           })
       },
 
@@ -203,7 +205,7 @@
             }
           }).catch(response => {
             console.log('ERROR response: ' + response.message)
-            this.$notification.error('Failed to get groups: ' + response.message)
+            this.$notification.error('Failed to get settings: ' + response.message)
           })
 
         this.editedItem = {}
