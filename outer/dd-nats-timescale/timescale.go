@@ -168,7 +168,7 @@ func (emitter *TimescaleEmitter) insertBatch() error {
 		if err != nil {
 			switch err := err.(type) {
 			default:
-				svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert: %#v", err))
+				svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert (default): %#v", err))
 				// log.Println(insert)
 				emitter.initBatch()
 				return err
@@ -177,7 +177,10 @@ func (emitter *TimescaleEmitter) insertBatch() error {
 					return emitter.connectdb()
 				}
 
-				svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert: %#v", err))
+				if err.Code != "23505" {
+					svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert (PgError): %#v", err))
+				}
+
 				// log.Println(insert)
 				emitter.initBatch()
 				return err

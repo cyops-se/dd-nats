@@ -49,7 +49,7 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	ctx = initContext(".", svc)
 	svc.Subscribe("usvc.cache.unpack", cacheUnpackHandler)
 
-	request := &CacheUnpackRequest{ItemsPerSec: 10000}
+	request := &CacheUnpackRequest{ItemsPerSec: 5000}
 	svc.Request("usvc.cache.unpack", request)
 }
 
@@ -71,7 +71,7 @@ func processCache(fullname string, info os.FileInfo, err error) error {
 		var datapoints types.DataPoints
 		if err = json.Unmarshal(content, &datapoints); err == nil {
 			for _, dp := range datapoints {
-				ctx.svc.Publish("process.actual", dp)
+				ctx.svc.Publish("process.filtered", dp)
 
 				counter--
 				if counter <= 0 {
