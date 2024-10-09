@@ -266,7 +266,7 @@
         ApiService.post('nats/request', request)
           .then(response => {
             if (response.data.success) {
-              this.$notification.success('Group started')
+              this.$notification.success('Group stopped')
               this.refresh()
             } else {
               this.$notification.error('Failed to stop group: ' + response.data.statusmsg)

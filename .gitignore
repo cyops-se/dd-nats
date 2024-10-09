@@ -34,3 +34,6 @@ incoming
 /outer/dd-nats-influxdb/dd-nats-influxdb
 /tools/logflood/logflood
 /tools/sniffer/sniffer
+/inner/dd-opcda-win/*/bin/*
+/inner/dd-opcda-win/*/obj/*
+/inner/dd-opcda-win/.vs/*

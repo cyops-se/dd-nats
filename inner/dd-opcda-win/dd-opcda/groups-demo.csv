@@ -1,0 +1,3 @@
+groupid;name;samplingtime;progid;default;runatstart;
+1;1sec;1;Graybox.Simulator.1;1;1;
+2;15sec;15;Graybox.Simulator.1;0;1;
