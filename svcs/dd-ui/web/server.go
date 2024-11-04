@@ -92,7 +92,7 @@ func RunWeb(usvc *ddsvc.DdUsvc) {
 	api := app.Group("/api")
 	routes.RegisterRoutes(api, usvc)
 
-	usvc.Subscribe(">", func(topic string, responseTopic string, data []byte) error {
+	usvc.Subscribe("system.heartbeat", func(topic string, responseTopic string, data []byte) error {
 		broadcast <- &WebSocketMessage{Topic: topic, Message: string(data)}
 		return nil
 	})

@@ -70,7 +70,6 @@ namespace DdUsvc
         {
             Task.Run(() =>
             {
-                Console.WriteLine($"Subscription for topic: {topic}, START!");
                 while (true)
                 {
                     using (var s = _connection.SubscribeSync(topic))
@@ -79,9 +78,7 @@ namespace DdUsvc
                         callback(topic, msg.Reply, msg.Data);
                     }
                 }
-                Console.WriteLine($"Subscription for topic: {topic}, END!");
             });
-
         }
     }
 }

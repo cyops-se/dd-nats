@@ -97,9 +97,10 @@ func buildDatasets(slaves []*ModbusSlaveItem, allitems []*ModbusItem) {
 
 		if TRACE {
 			for dno, ds := range mc.Datasets {
-				usvc.Trace("Modbus TCP", "ds: %d, start: %d, count: %d, len(items): %d, offset: %d", dno, ds.start, ds.count, len(ds.items), slave.Offset)
+				usvc.Trace("Modbus TCP", "ds: %d, start: %d, count: %d, len(items): %d, offset: %d, slave ip: %s",
+					dno, ds.start, ds.count, len(ds.items), slave.Offset, slave.IPAddress)
 				for i, item := range ds.items {
-					usvc.Trace("Modbus TCP", "item: %d, name: %s", i, item.Name)
+					usvc.Trace("Modbus TCP", "item: %d, name: %s, address: %d, slave ip: %s", i, item.Name, item.ModbusAddress, item.ModbusSlave.IPAddress)
 				}
 			}
 		}
@@ -180,7 +181,7 @@ func (mc *modbusConnection) runSlaveWorker() {
 					}
 
 					if mc.Err != nil {
-						usvc.Error("Mobus TCP", "Failure to read registers on modbus slave %s, start: %d, count: %d, error: %s",
+						usvc.Error("Mobus TCP", "Failure to read registers on modbus slave %s, start: %d (-1), count: %d, error: %s",
 							mc.Slave.IPAddress, ds.start, ds.count, mc.Err.Error())
 
 						mc.ErrStr = mc.Err.Error()
@@ -210,7 +211,8 @@ func (mc *modbusConnection) runSlaveWorker() {
 
 							usvc.Publish("process.actual", msg.Points[n])
 
-							usvc.Trace("Modbus TCP", "ds: %d, name: %s, address: %d, raw value: %v, value: %f", dsno, item.Name, int(ds.start)+n, rawvalue, value)
+							usvc.Trace("Modbus TCP", "ds: %d, name: %s, address: %d, raw value: %v, value: %f, slave ip: %s",
+								dsno, item.Name, int(ds.start)+n, rawvalue, value, mc.Slave.IPAddress)
 							usvc.Trace("Modbus TCP", "msg.Time: %v, msg.Name: %s, msg.Value: %v, msg.Quality: %d",
 								msg.Points[n].Time, msg.Points[n].Name, msg.Points[n].Value, msg.Points[n].Quality)
 						}

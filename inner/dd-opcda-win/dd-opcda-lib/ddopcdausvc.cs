@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Linq;
 
 namespace DdOpcDaLib
 {
@@ -39,6 +40,12 @@ namespace DdOpcDaLib
             public OpcGroupItem Group { get; set; }
             [JsonProperty("groupid")]
             public int GroupID { get; set; }
+            [JsonProperty("time")]
+            public DateTime Time { get; set; }
+            [JsonProperty("value")]
+            public double Value { get; set; }
+            [JsonProperty("quality")]
+            public int Quality { get; set; }
         }
 
         public class OpcGroupItem
@@ -286,10 +293,11 @@ namespace DdOpcDaLib
                         {
                             if (row.StartsWith("name;")) continue;
                             var fields = row.Split(';');
-                            var groupid = int.Parse(fields[1]); // 1 based numbering
+                            var groupid = int.Parse(fields[1]); // 1 based numbering of group id
                             if (groupid < 1 || groupid > _groups.Count)
                             {
-                                DdOpcDa.LogEvent($"Tag row item refers to group id out of range (1 based). Is 1 <= {groupid} <= {_groups.Count}. Row ignored");
+                                DdOpcDa.LogEvent($"Tag row item refers to group id out of range (1 based). {groupid} < 1 || {groupid} > {_groups.Count}.");
+                                DdOpcDa.LogEvent($"Row ignored: {row}");
                                 continue;
                             }
 
@@ -366,16 +374,21 @@ namespace DdOpcDaLib
                 {
                     if (HRESULTS.Succeeded(s.Error))
                     {
-                        if (s.HandleClient > 0 && s.HandleClient < _tags.Count)
+                        if (s.HandleClient >= 0 && s.HandleClient < _tags.Count)
                         {
+                            var tag = _tags[s.HandleClient]; // HandleClient set to tag.Id (0 based, matching the array)
                             var point = new DataPoint();
                             point.Time = DateTime.FromFileTimeUtc(s.TimeStamp);
-                            point.Name = _tags[s.HandleClient].Name; // HandleClient set to tag.Id (0 based, matching the array)
+                            point.Name = tag.Name;
                             point.Value = Convert.ToDouble(s.DataValue);
                             point.Quality = s.Quality;
                             var payload = JsonConvert.SerializeObject(point);
                             byte[] bytes = Encoding.UTF8.GetBytes(payload);
                             broker.Publish("process.actual", bytes);
+
+                            tag.Time = point.Time;
+                            tag.Value = point.Value;
+                            tag.Quality = point.Quality;
                         }
                         else
                         {
@@ -392,19 +405,31 @@ namespace DdOpcDaLib
 
         internal DdUsvcError getAllTags(string topic, string responsetopic, byte[] data)
         {
+            var response = new OpcTagItemResponse();
+            response.Success = true;
             try
             {
-                var response = new OpcTagItemResponse();
                 response.Items = _tags.ToArray();
-                response.Success = true;
 
-                this.Publish(responsetopic, response);
+                var err = this.Publish(responsetopic, response);
+                if (err.Code == DdUsvcErrorCode.Error)
+                {
+                    DdOpcDa.LogError($"tags.getall responding FAILED ... {responsetopic}, err: {err.Reason}");
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
                 lasterror.Code = DdUsvcErrorCode.Error;
                 lasterror.Reason = ex.Message;
+
+                response.Success = false;
+                response.StatusMessage = ex.Message;
+
+                var err = this.Publish(responsetopic, response);
+                if (err.Code == DdUsvcErrorCode.Error) {
+                    DdOpcDa.LogError($"tags.getall responding FAILED ... {responsetopic}, err: {err.Reason}, ex: {response.StatusMessage}");
+                }
             }
 
             return this.lasterror;
@@ -412,11 +437,11 @@ namespace DdOpcDaLib
 
         internal DdUsvcError getAllGroups(string topic, string responsetopic, byte[] data)
         {
+            var response = new OpcGroupItemResponse();
+            response.Success = true;
             try
             {
-                var response = new OpcGroupItemResponse();
                 response.Items = _groups.ToArray();
-                response.Success = true;
 
                 this.Publish(responsetopic, response);
             }
@@ -425,6 +450,12 @@ namespace DdOpcDaLib
                 Console.WriteLine(ex.Message);
                 lasterror.Code = DdUsvcErrorCode.Error;
                 lasterror.Reason = ex.Message;
+
+                response.Success = false;
+                response.StatusMessage = ex.Message;
+
+                DdOpcDa.LogError($"groups.getall responding to ... {responsetopic}, ex: {response.StatusMessage}");
+                this.Publish(responsetopic, response);
             }
 
             return this.lasterror;

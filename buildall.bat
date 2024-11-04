@@ -46,6 +46,7 @@ if "%GOOS%" == "windows" (
     xcopy /q /y .\tools\sniffer\*.exe .\dist\%GOOS%\inner\
     xcopy /q /y .\svcs\dd-logger\*.exe .\dist\%GOOS%\inner\
     xcopy /q /y .\svcs\dd-ui\*.exe .\dist\%GOOS%\inner\
+    xcopy /q /y .\outer\dd-nats-cache-unpack\*.exe .\dist\%GOOS%\outer\
     xcopy /q /y .\outer\dd-nats-file-outer\*.exe .\dist\%GOOS%\outer\
     xcopy /q /y .\outer\dd-nats-influxdb\*.exe .\dist\%GOOS%\outer\
     xcopy /q /y .\outer\dd-nats-outer-proxy\*.exe .\dist\%GOOS%\outer\
@@ -66,6 +67,7 @@ if "%GOOS%" == "linux" (
     xcopy /q /y .\tools\sniffer\sniffer .\dist\%GOOS%\inner\
     xcopy /q /y .\svcs\dd-logger\dd-logger .\dist\%GOOS%\inner\
     xcopy /q /y .\svcs\dd-ui\dd-ui .\dist\%GOOS%\inner\
+    xcopy /q /y .\outer\dd-nats-cache-unpack\dd-nats-cache-unpack .\dist\%GOOS%\outer\
     xcopy /q /y .\outer\dd-nats-file-outer\dd-nats-file-outer .\dist\%GOOS%\outer\
     xcopy /q /y .\outer\dd-nats-influxdb\dd-nats-influxdb .\dist\%GOOS%\outer\
     xcopy /q /y .\outer\dd-nats-outer-proxy\dd-nats-outer-proxy .\dist\%GOOS%\outer\
