@@ -19,5 +19,11 @@
     <Platforms>AnyCPU;x86</Platforms>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <PackageReference Include="NATS.Client" Version="1.1.6" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
 
 </Project>

@@ -47,6 +47,8 @@ namespace DdOpcDaLib
             public double Value { get; set; }
             [JsonProperty("quality")]
             public int Quality { get; set; }
+            [JsonProperty("Error")]
+            public int Error { get; set; }
         }
 
         public class OpcGroupItem
@@ -117,9 +119,34 @@ namespace DdOpcDaLib
             public OpcServerItem[] Items { get; set; }
         }
 
+
         // Requests
+        public class GetOPCBranches
+        {
+            [JsonProperty("sid")]
+            public int ServerId { get; set; }
+
+            [JsonProperty("branch")]
+            public string Branch {  get; set; }
+        }
+
 
         // Responses
+        public class BrowserPosition : StatusResponse
+        {
+            [JsonProperty("sid")]
+            public int ServerId { get; set; }
+
+            [JsonProperty("position")]
+            public string Position { get; set; }
+
+            [JsonProperty("branches")]
+            public string[] Branches { get; set; }
+
+            [JsonProperty("leaves")]
+            public string[] Leaves { get; set; }
+}
+
         public class OpcTagItemResponse : StatusResponse
         {
             [JsonProperty("items")]
@@ -141,22 +168,26 @@ namespace DdOpcDaLib
         protected Dictionary<string, OpcServer> _opcServers = new Dictionary<string, OpcServer>();
         protected List<OpcGroupItem> _groups;
         protected List<OpcTagItem> _tags;
+        private System.Timers.Timer aTimer;
 
         public DdOpcDaUsvc(string name, string[] args) : base(name, args)
         {
             Name = name;
-            loadGroups("groups.csv");
-            loadTags("tags.csv");
-            prepareOpc();
+            LoadGroups("groups.csv");
+            LoadTags("tags.csv");
+            PrepareOpc();
+            SetTimer();
 
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.tags.getall", this.getAllTags);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.getall", this.getAllGroups);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.start", this.startGroup);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.stop", this.stopGroup);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.getall", this.getAllServers);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.tags.getall", this.GetAllTags);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.getall", this.GetAllGroups);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.start", this.StartGroup);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.stop", this.StopGroup);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.getall", this.GetAllServers);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.root", this.GetOpcServerRoot);
+            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.getbranch", this.GetOpcServerBranch);
         }
 
-        internal OpcServer connectServer(string progid)
+        internal OpcServer ConnectServer(string progid)
         {
             if (_opcServers.ContainsKey(progid)) return _opcServers[progid];
 
@@ -238,7 +269,7 @@ namespace DdOpcDaLib
             }
         }
 
-        internal void loadGroups(string filename)
+        internal void LoadGroups(string filename)
         {
             try
             {
@@ -260,7 +291,7 @@ namespace DdOpcDaLib
                         group.State = OpcGroupState.GroupStateStopped;
                         group.tags = new List<OpcTagItem>();
 
-                        var opcServer = connectServer(group.ProgID);
+                        var opcServer = ConnectServer(group.ProgID);
                         group.opcGroup = opcServer.AddGroup($"dd-opcda-group-{group.Id}", false, group.Interval * 1000);
                         group.opcGroup.PercentDeadband = 0.0001f;
                         group.opcGroup.RefreshState();
@@ -282,7 +313,7 @@ namespace DdOpcDaLib
         // Reads all tags in a CSV file and stores them in a ordered list (_tags) for reference and OPC item definitions
         // list in the associated sampling group. Items in the group are validated later and may be remove from the
         // definitions list while the ordered list keep them to maintain the order integrity
-        internal void loadTags(string filename)
+        internal void LoadTags(string filename)
         {
             try
             {
@@ -306,7 +337,7 @@ namespace DdOpcDaLib
                             }
 
                             var group = _groups[groupid - 1]; // 1 based numbering in 0 based array
-                            var tag = new OpcTagItem() { Id = tagid++, GroupID = groupid, Name = fields[0] };
+                            var tag = new OpcTagItem() { Id = tagid++, GroupID = groupid, Group = group, Name = fields[0] };
                             _tags.Add(tag);
                             group.tags.Add(tag);
                             group.opcItemDefinitions.Add(new OpcItemDefinition(tag.Name, true, tag.Id, VarEnum.VT_EMPTY));
@@ -325,7 +356,7 @@ namespace DdOpcDaLib
             }
         }
 
-        internal void prepareOpc()
+        internal void PrepareOpc()
         {
             // Initialize all groups
             foreach (var group in _groups)
@@ -370,6 +401,7 @@ namespace DdOpcDaLib
                     if (s.HandleClient >= 0 && s.HandleClient < _tags.Count)
                     {
                         var tag = _tags[s.HandleClient]; // HandleClient set to tag.Id (0 based, matching the array)
+                        tag.Error = s.Error;
                         if (HRESULTS.Succeeded(s.Error))
                         {
                             var point = new DataPoint();
@@ -402,7 +434,41 @@ namespace DdOpcDaLib
             }
         }
 
-        internal DdUsvcError getAllTags(string topic, string responsetopic, byte[] data)
+        private void SetTimer()
+        {
+            aTimer = new System.Timers.Timer(1000);
+            aTimer.Elapsed += ATimer_Elapsed; ;
+            aTimer.AutoReset = true;
+            aTimer.Enabled = true;
+        }
+
+        private void ATimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            foreach (OpcTagItem tag in _tags)
+            {
+                // Only process error free tags in an active group
+                if (tag.Group.opcGroup != null && tag.Group.opcGroup.Active && HRESULTS.Succeeded(tag.Error))
+                {
+                    var now = DateTime.UtcNow;
+                    var diff = now.Subtract(tag.Time);
+                    // LogEvent($"diff: {diff.TotalSeconds}, trigger: {diff > TimeSpan.FromSeconds(10)}");
+                    if (diff > TimeSpan.FromSeconds(10))
+                    {
+                        var point = new DataPoint();
+                        point.Time = now;
+                        point.Name = tag.Name;
+                        point.Value = Convert.ToDouble(tag.Value);
+                        point.Quality = 68; // Uncertain [Last usable] tag.Quality;
+                        var payload = JsonConvert.SerializeObject(point);
+                        byte[] bytes = Encoding.UTF8.GetBytes(payload);
+                        broker.Publish("process.actual", bytes);
+                        tag.Time = now;
+                    }
+                }
+            }
+        }
+
+        internal DdUsvcError GetAllTags(string topic, string responsetopic, byte[] data)
         {
             var response = new OpcTagItemResponse();
             response.Success = true;
@@ -434,7 +500,7 @@ namespace DdOpcDaLib
             return this.lasterror;
         }
 
-        internal DdUsvcError getAllGroups(string topic, string responsetopic, byte[] data)
+        internal DdUsvcError GetAllGroups(string topic, string responsetopic, byte[] data)
         {
             var response = new OpcGroupItemResponse();
             response.Success = true;
@@ -460,7 +526,7 @@ namespace DdOpcDaLib
             return this.lasterror;
         }
 
-        internal DdUsvcError startGroup(string topic, string responsetopic, byte[] data)
+        internal DdUsvcError StartGroup(string topic, string responsetopic, byte[] data)
         {
             var response = new StatusResponse();
             try
@@ -499,7 +565,7 @@ namespace DdOpcDaLib
             return this.lasterror;
         }
 
-        internal DdUsvcError stopGroup(string topic, string responsetopic, byte[] data)
+        internal DdUsvcError StopGroup(string topic, string responsetopic, byte[] data)
         {
             var response = new StatusResponse();
             try
@@ -538,14 +604,13 @@ namespace DdOpcDaLib
             return this.lasterror;
         }
 
-        internal DdUsvcError getAllServers(string topic, string responsetopic, byte[] data)
+        internal DdUsvcError GetAllServers(string topic, string responsetopic, byte[] data)
         {
             try
             {
                 var servers = OpcServerList.ListAll(OpcServerList.OpcDataAccess20);
                 if (servers != null)
                 {
-                    Console.WriteLine($"Number of OPCDA20 servers found: {servers.Length}");
                     var response = new OpcServerItemResponse();
                     response.Items = new OpcServerItem[servers.Length];
                     response.Success = true;
@@ -566,6 +631,65 @@ namespace DdOpcDaLib
                 Console.WriteLine(ex.ToString());
                 lasterror.Code = DdUsvcErrorCode.Error;
                 lasterror.Reason = ex.Message;
+            }
+
+            return this.lasterror;
+        }
+        private DdUsvcError GetOpcServerRoot(string topic, string responsetopic, byte[] data)
+        {
+            var response = new BrowserPosition();
+            try
+            {
+                var request = JsonConvert.DeserializeObject<IntMessage>(Encoding.UTF8.GetString(data));
+                var sid = request.Value;
+
+                var servers = OpcServerList.ListAll(OpcServerList.OpcDataAccess20);
+                var server = servers[sid];
+                var opcServer = ConnectServer(server.ProgID);
+                opcServer.ChangeBrowsePosition(OPCBROWSEDIRECTION.OPC_BROWSE_TO, string.Empty);
+                response.Branches = opcServer.BrowseItemIDs(OPCBROWSETYPE.OPC_BRANCH);
+                response.Leaves = opcServer.BrowseItemIDs(OPCBROWSETYPE.OPC_LEAF);
+                response.ServerId = sid;
+                this.Publish(responsetopic, response);
+            }
+            catch (Exception ex)
+            {
+                lasterror.Code = DdUsvcErrorCode.Error;
+                lasterror.Reason = ex.Message;
+                response.Success = false;
+                response.StatusMessage = $"GetOpcServerRoot failed {ex.ToString()}";
+
+                LogError(response.StatusMessage);
+                this.Publish(responsetopic, response);
+            }
+
+            return this.lasterror;
+        }
+
+        private DdUsvcError GetOpcServerBranch(string topic, string responsetopic, byte[] data)
+        {
+            var response = new BrowserPosition();
+            try
+            {
+                var request = JsonConvert.DeserializeObject<GetOPCBranches>(Encoding.UTF8.GetString(data));
+                var servers = OpcServerList.ListAll(OpcServerList.OpcDataAccess20);
+                var server = servers[request.ServerId];
+                var opcServer = ConnectServer(server.ProgID);
+                opcServer.ChangeBrowsePosition(OPCBROWSEDIRECTION.OPC_BROWSE_TO, request.Branch);
+                response.Branches = opcServer.BrowseItemIDs(OPCBROWSETYPE.OPC_BRANCH);
+                response.Leaves = opcServer.BrowseItemIDs(OPCBROWSETYPE.OPC_LEAF);
+                response.ServerId = request.ServerId;
+                this.Publish(responsetopic, response);
+            }
+            catch (Exception ex)
+            {
+                lasterror.Code = DdUsvcErrorCode.Error;
+                lasterror.Reason = ex.Message;
+                response.Success = false;
+                response.StatusMessage = $"GetOpcServerBranch failed {ex.ToString()}";
+
+                LogError(response.StatusMessage);
+                this.Publish(responsetopic, response);
             }
 
             return this.lasterror;
