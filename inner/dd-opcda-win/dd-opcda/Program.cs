@@ -12,7 +12,7 @@ namespace DdOpcDaCli
             var svc = new DdOpcDaUsvc("dd-nats-opcda", args);
             svc.Startup();
 
-            DdOpcDaLib.DdOpcDa.LogEvent("********** Press <Enter> to close **********");
+            svc.LogEvent("********** Press <Enter> to close **********");
             Console.ReadLine();
             svc.Shutdown();
         }

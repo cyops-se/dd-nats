@@ -1,16 +1,10 @@
 ﻿using DdUsvc;
-using NATS.Client.Internals.SimpleJSON;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using System.Runtime.Serialization;
-using System.Runtime.CompilerServices;
-using NATS.Client;
 
 namespace DdUsvc
 {
@@ -126,6 +120,21 @@ namespace DdUsvc
             broker.Subscribe(topic, callback);
         }
 
+        public void LogEvent(string message)
+        {
+            var now = DateTime.UtcNow;
+            Console.WriteLine("{0}: INFO: {1}", now.ToString(), message);
+            Publish("system.log.info", message);
+        }
+
+        public void LogError(string message)
+        {
+            var now = DateTime.UtcNow;
+            Console.WriteLine("{0}: ERROR: {1}", now.ToString(), message);
+            Publish("system.log.error", message);
+
+        }
+
         internal Dictionary<string, string> initSettings(string[] args)
         {
             var s = new Dictionary<string, string>();
@@ -174,20 +183,6 @@ namespace DdUsvc
             response.Success = false;
             response.StatusMessage = "Sorry, it is not possible to modify settings yet in the .NET version!";
             this.Publish(responsetopic, response);
-            //try
-            //{
-            //    var request = JsonConvert.DeserializeObject<SetSettingsResponse>(Encoding.UTF8.GetString(data));
-            //    settings = request.Items;
-            //    var response = new StatusResponse();
-            //    response.Success = true;
-            //    this.Publish(responsetopic, response);
-            //}
-            //catch (Exception ex)
-            //{
-            //    Console.WriteLine (ex.Message );
-            //    lasterror.Code = DdUsvcErrorCode.Error;
-            //    lasterror.Reason = ex.Message;
-            //}
 
             return this.lasterror;
         }

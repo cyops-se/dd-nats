@@ -39,11 +39,11 @@ namespace DdOpcDaSvc
         {
             try
             {
-                DdOpcDa.LogEvent($"Starting microservice: {usvc.Name}");
+                eventLog.WriteEntry($"OnStart: starting microservice: {usvc.Name}");
                 usvc.Startup();
             } catch ( Exception ex )
             {
-                eventLog.WriteEntry($"OnStart failed, exception: {ex.Message}");
+                eventLog.WriteEntry($"OnStart: failed, exception: {ex.Message}");
             }
         }
 
@@ -51,12 +51,12 @@ namespace DdOpcDaSvc
         {
             try
             {
-                DdOpcDa.LogEvent($"Shutting down microservice: {usvc.Name}");
+                eventLog.WriteEntry($"OnStop: shutting down microservice: {usvc.Name}");
                 usvc.Shutdown();
             }
             catch (Exception ex)
             {
-                eventLog.WriteEntry($"OnStop failed, exception: {ex.Message}");
+                eventLog.WriteEntry($"OnStop: failed, exception: {ex.Message}");
             }
         }
     }

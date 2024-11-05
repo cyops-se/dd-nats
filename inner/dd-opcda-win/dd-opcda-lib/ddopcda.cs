@@ -459,6 +459,7 @@ namespace DdOpcDaLib
             var now = DateTime.UtcNow;
             Console.WriteLine("{0}: {1}", now.ToString(), message);
             if (EventLog != null) EventLog.WriteEntry($"{message}", EventLogEntryType.Error);
+
         }
 
         public DdUsvcError Connect()

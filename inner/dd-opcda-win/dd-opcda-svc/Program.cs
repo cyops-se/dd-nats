@@ -23,12 +23,11 @@ namespace DdOpcDaSvc
             };
             try
             {
-                DdOpcDa.LogEvent($"Starting dd-opcda-svc engine");
                 ServiceBase.Run(ServicesToRun);
             }
             catch (Exception ex)
             {
-                DdOpcDa.LogError($"CRITICAL error: {ex.ToString()}");
+                Console.WriteLine($"CRITICAL error: {ex.ToString()}");
             }
         }
     }

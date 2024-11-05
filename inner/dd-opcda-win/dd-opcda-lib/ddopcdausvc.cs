@@ -10,6 +10,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Linq;
+using System.Diagnostics;
 
 namespace DdOpcDaLib
 {
@@ -162,12 +163,12 @@ namespace DdOpcDaLib
             var opcServer = new OpcServer();
             try
             {
-                DdOpcDa.LogEvent($"Connecting to OPC DA server with prog id: {progid}");
+                LogEvent($"Connecting to OPC DA server with prog id: {progid}");
                 opcServer.Connect(progid);
             }
             catch (Exception ex)
             {
-                DdOpcDa.LogEvent($"Failed to connect OPC DA server: {progid}, error: {ex.Message}");
+                LogEvent($"Failed to connect OPC DA server: {progid}, error: {ex.Message}");
                 return null;
             }
 
@@ -187,12 +188,12 @@ namespace DdOpcDaLib
                     {
                         group.opcGroup.Active = true;
                         group.State = OpcGroupState.GroupStateRunning;
-                        DdOpcDa.LogEvent($"Starting group: {group.Name}");
+                        LogEvent($"Starting group: {group.Name}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    DdOpcDa.LogEvent($"Exception caught when starting up group: {ex.Message}");
+                    LogEvent($"Exception caught when starting up group: {ex.Message}");
                 }
             }
         }
@@ -214,7 +215,7 @@ namespace DdOpcDaLib
                 }
                 catch (Exception ex)
                 {
-                    DdOpcDa.LogError($"Exception caught when shutting down group:{ex.Message}");
+                    LogError($"Exception caught when shutting down group:{ex.Message}");
                 }
 
                 try
@@ -232,7 +233,7 @@ namespace DdOpcDaLib
                 }
                 catch (Exception ex)
                 {
-                    DdOpcDa.LogEvent($"Exception caught when shutting down server:{ex.Message}");
+                    LogEvent($"Exception caught when shutting down server:{ex.Message}");
                 }
             }
         }
@@ -261,6 +262,9 @@ namespace DdOpcDaLib
 
                         var opcServer = connectServer(group.ProgID);
                         group.opcGroup = opcServer.AddGroup($"dd-opcda-group-{group.Id}", false, group.Interval * 1000);
+                        group.opcGroup.PercentDeadband = 0.0001f;
+                        group.opcGroup.RefreshState();
+                        Console.WriteLine($"Group id {group.Id} states, percentdeadband: {group.opcGroup.PercentDeadband}, interval: {group.opcGroup.UpdateRate}");
                         group.opcItemDefinitions = new List<OpcItemDefinition>();
                         group.invalidItemDefinitions = new List<OpcItemDefinition>();
 
@@ -270,7 +274,7 @@ namespace DdOpcDaLib
             }
             catch (Exception e)
             {
-                DdOpcDa.LogEvent($"Failed to load groups: {e.Message}");
+                LogEvent($"Failed to load groups: {e.Message}");
                 Console.WriteLine(e.ToString());
             }
         }
@@ -296,8 +300,8 @@ namespace DdOpcDaLib
                             var groupid = int.Parse(fields[1]); // 1 based numbering of group id
                             if (groupid < 1 || groupid > _groups.Count)
                             {
-                                DdOpcDa.LogEvent($"Tag row item refers to group id out of range (1 based). {groupid} < 1 || {groupid} > {_groups.Count}.");
-                                DdOpcDa.LogEvent($"Row ignored: {row}");
+                                LogEvent($"Tag row item refers to group id out of range (1 based). {groupid} < 1 || {groupid} > {_groups.Count}.");
+                                LogEvent($"Row ignored: {row}");
                                 continue;
                             }
 
@@ -309,7 +313,7 @@ namespace DdOpcDaLib
                         }
                         catch (Exception ex)
                         {
-                            DdOpcDa.LogEvent($"Failed to read tag line: {row}, {ex.Message}");
+                            LogEvent($"Failed to read tag line: {row}, {ex.Message}");
                             Console.WriteLine(ex.ToString());
                         }
                     }
@@ -317,7 +321,7 @@ namespace DdOpcDaLib
             }
             catch (Exception e)
             {
-                DdOpcDa.LogEvent($"Failed to load tags: {e.Message}");
+                LogEvent($"Failed to load tags: {e.Message}");
             }
         }
 
@@ -334,33 +338,24 @@ namespace DdOpcDaLib
                     var result = results[i];
                     if (HRESULTS.Failed(result.Error))
                     {
-                        DdOpcDa.LogEvent($"OpcItemResult error: {result.AccessRights}: {result.Error}, {group.tags[i].Name}, i: {i}, removing tag from group {group.Name}!");
+                        LogEvent($"OpcItemResult error: {result.AccessRights}: {result.Error}, {group.tags[i].Name}, i: {i}, removing tag from group {group.Name}!");
                         group.invalidItemDefinitions.Add(group.opcItemDefinitions[i]);
                         group.opcItemDefinitions.RemoveAt(i);
                     }
                 }
 
                 group.opcGroup.AddItems(group.opcItemDefinitions.ToArray(), out OpcItemResult[] opcItemResult);
-
-                //group.opcGroup.DataChanged += OpcGroup_DataChanged;
-                //group.opcGroup.CancelCompleted += OpcGroup_CancelCompleted;
-                //group.opcGroup.SetEnable(true);
-                //if (group.RunAtStart)
-                //{
-                //    group.opcGroup.Active = true;
-                //    group.State = OpcGroupState.GroupStateRunning;
-                //}
             }
         }
 
         private void OpcGroup_CancelCompleted(object sender, CancelCompleteEventArgs e)
         {
-            DdOpcDa.LogEvent($"CancelCompleted Group:{e.GroupHandleClient} TrID:{e.TransactionID}");
+            LogEvent($"CancelCompleted Group:{e.GroupHandleClient} TrID:{e.TransactionID}");
         }
 
         private void opcServer_ShutdownRequested(object sender, ShutdownRequestEventArgs e)
         {
-            DdOpcDa.LogEvent($"ShutdownRequested: Reason:{e.ShutdownReason}");
+            LogEvent($"ShutdownRequested: Reason:{e.ShutdownReason}");
         }
 
 
@@ -372,11 +367,11 @@ namespace DdOpcDaLib
                 var total = e.ItemStates.Length;
                 foreach (OpcItemState s in e.ItemStates)
                 {
-                    if (HRESULTS.Succeeded(s.Error))
+                    if (s.HandleClient >= 0 && s.HandleClient < _tags.Count)
                     {
-                        if (s.HandleClient >= 0 && s.HandleClient < _tags.Count)
+                        var tag = _tags[s.HandleClient]; // HandleClient set to tag.Id (0 based, matching the array)
+                        if (HRESULTS.Succeeded(s.Error))
                         {
-                            var tag = _tags[s.HandleClient]; // HandleClient set to tag.Id (0 based, matching the array)
                             var point = new DataPoint();
                             point.Time = DateTime.FromFileTimeUtc(s.TimeStamp);
                             point.Name = tag.Name;
@@ -392,14 +387,18 @@ namespace DdOpcDaLib
                         }
                         else
                         {
-                            DdOpcDa.LogError($"Error while processing data changed event, client handle index not in tag list: {s.HandleClient} ({_tags.Count})");
+                            LogError($"Error while processing data changed event, tag: {tag.Name}, returned error: {s.Error}");
                         }
+                    }
+                    else
+                    {
+                        LogError($"Error while processing data changed event, client handle index not in tag list: {s.HandleClient} ({_tags.Count})");
                     }
                 }
             }
             catch (Exception ex)
             {
-                DdOpcDa.LogError($"Exception while processing data changed event: {ex.ToString()}");
+                LogError($"Exception while processing data changed event: {ex.ToString()}");
             }
         }
 
@@ -414,7 +413,7 @@ namespace DdOpcDaLib
                 var err = this.Publish(responsetopic, response);
                 if (err.Code == DdUsvcErrorCode.Error)
                 {
-                    DdOpcDa.LogError($"tags.getall responding FAILED ... {responsetopic}, err: {err.Reason}");
+                    LogError($"tags.getall responding FAILED ... {responsetopic}, err: {err.Reason}");
                 }
             }
             catch (Exception ex)
@@ -428,7 +427,7 @@ namespace DdOpcDaLib
 
                 var err = this.Publish(responsetopic, response);
                 if (err.Code == DdUsvcErrorCode.Error) {
-                    DdOpcDa.LogError($"tags.getall responding FAILED ... {responsetopic}, err: {err.Reason}, ex: {response.StatusMessage}");
+                    LogError($"tags.getall responding FAILED ... {responsetopic}, err: {err.Reason}, ex: {response.StatusMessage}");
                 }
             }
 
@@ -454,7 +453,7 @@ namespace DdOpcDaLib
                 response.Success = false;
                 response.StatusMessage = ex.Message;
 
-                DdOpcDa.LogError($"groups.getall responding to ... {responsetopic}, ex: {response.StatusMessage}");
+                LogError($"groups.getall responding to ... {responsetopic}, ex: {response.StatusMessage}");
                 this.Publish(responsetopic, response);
             }
 
@@ -479,7 +478,7 @@ namespace DdOpcDaLib
                         group.opcGroup.Active = true;
                         group.State = OpcGroupState.GroupStateRunning;
                         response.Success = true;
-                        DdOpcDa.LogEvent($"Group started: {group.Id}, state: {group.State}");
+                        LogEvent($"Group started: {group.Id}, state: {group.State}");
                     }
                 }
 
@@ -518,7 +517,7 @@ namespace DdOpcDaLib
                         group.opcGroup.Active = false;
                         group.State = OpcGroupState.GroupStateStopped;
                         response.Success = true;
-                        DdOpcDa.LogEvent($"Group stopped: {group.Id}, state: {group.State}");
+                        LogEvent($"Group stopped: {group.Id}, state: {group.State}");
                     }
                 }
 
