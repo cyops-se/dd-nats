@@ -1,26 +1,25 @@
 <template>
   <v-btn
-    class="ml-3 mr-4"
+    class="ml-0 mr-4"
     elevation="1"
     fab
     small
     @click="mini = !mini"
   >
     <v-icon>
-      {{ mini ? 'mdi-format-list-bulleted' : 'mdi-dots-vertical' }}
+      {{ mini ? "mdi-chevron-double-right" : "mdi-chevron-double-left" }}
     </v-icon>
   </v-btn>
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { sync } from 'vuex-pathify'
 
   export default {
     name: 'DefaultDrawerToggle',
 
     computed: {
-
       mini: sync('app/mini'),
     },
   }

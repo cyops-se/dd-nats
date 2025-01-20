@@ -23,7 +23,7 @@ namespace DdOpcDaSvc
 
             eventLog.Source = evtSource;
             eventLog.Log = evtLog;
-            DdOpcDa.EventLog = eventLog;
+            DdUsvc.DdUsvc.EventLog = eventLog;
 
             try
             {
@@ -40,6 +40,7 @@ namespace DdOpcDaSvc
             try
             {
                 eventLog.WriteEntry($"OnStart: starting microservice: {usvc.Name}");
+                usvc.Initialize();
                 usvc.Startup();
             } catch ( Exception ex )
             {

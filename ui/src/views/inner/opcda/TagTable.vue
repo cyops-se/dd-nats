@@ -10,7 +10,7 @@
       :headers="headers"
       :items="items"
       :search="search"
-      class="elevation-1"
+      class="elevation-1 text-no-wrap"
     >
       <template v-slot:top>
         <v-toolbar
@@ -131,6 +131,16 @@
             svcname="ddnatsopcda"
             @change="refresh"
           />
+          <v-btn
+            elevation="1"
+            fab
+            small
+            @click="refresh"
+          >
+            <v-icon>
+              {{ "mdi-refresh" }}
+            </v-icon>
+          </v-btn>
         </v-toolbar>
       </template>
       <template
@@ -178,10 +188,11 @@
           width: 75,
         },
         { text: 'Name', value: 'name', width: '60%' },
-        { text: 'Group', value: 'group.name', width: '20%' },
-        { text: 't', value: 'time', width: '10%' },
+        { text: 'Group', value: 'group.name', width: '10%' },
+        { text: 't', value: 'time', width: '20%' },
         { text: 'v', value: 'value', width: '10%' },
-        { text: 'q', value: 'quality', width: '10%' },
+        { text: 'q', value: 'quality', width: '5%' },
+        { text: 'i', value: 'instance', width: '5%' },
         { text: '', value: 'diff', width: '10%' },
         { text: 'Actions', value: 'actions', width: 1, sortable: false },
       ],
@@ -223,7 +234,12 @@
         var request = { subject: 'usvc.opc.' + this.selected.key + '.tags.getall', payload: { value: parseInt(this.$route.params.serverid) } }
         await ApiService.post('nats/request', request)
           .then(response => {
+            response.data.items.forEach(element => {
+              element.value = element.value.toFixed(4)
+              element.time = element.time.substr(0,19).replace('T', ' ')
+            })
             this.items = response.data.items
+            console.log(this.items)
           }).catch(response => {
             this.$notification.error('Failed to get tags: ' + response.data.statusmsg)
           })
