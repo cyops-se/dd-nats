@@ -131,16 +131,12 @@
             svcname="ddnatsopcda"
             @change="refresh"
           />
-          <v-btn
-            elevation="1"
-            fab
-            small
-            @click="refresh"
+          <v-icon
+            class="ml-2"
+            @click="refresh()"
           >
-            <v-icon>
-              {{ "mdi-refresh" }}
-            </v-icon>
-          </v-btn>
+            mdi-reload
+          </v-icon>
         </v-toolbar>
       </template>
       <template
@@ -236,7 +232,7 @@
           .then(response => {
             response.data.items.forEach(element => {
               element.value = element.value.toFixed(4)
-              element.time = element.time.substr(0,19).replace('T', ' ')
+              element.time = element.time.substr(0, 19).replace('T', ' ')
             })
             this.items = response.data.items
             console.log(this.items)
