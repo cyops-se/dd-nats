@@ -73,7 +73,7 @@ func (mb *NatsMessageBroker) Request(topic string, data interface{}) ([]byte, er
 		return nil, fmt.Errorf("failed to publish subject '%s': %s", topic, err.Error())
 	}
 
-	msg, err := mb.NatsCon.Request(topic, payload, 2*time.Second)
+	msg, err := mb.NatsCon.Request(topic, payload, 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
