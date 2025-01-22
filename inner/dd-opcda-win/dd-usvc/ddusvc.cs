@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using System.Diagnostics;
 
 namespace DdUsvc
 {
@@ -91,6 +92,9 @@ namespace DdUsvc
         protected DdUsvcError lasterror;
         protected static IMessageBroker broker;
 
+        private static EventLog eventLog = null;
+        public static EventLog EventLog { get => eventLog; set => eventLog = value; }
+
         public DdUsvc(string name, string[] args)
         {
             this.Name = name;
@@ -125,6 +129,7 @@ namespace DdUsvc
             var now = DateTime.UtcNow;
             Console.WriteLine("{0}: INFO: {1}", now.ToString(), message);
             Publish("system.log.info", message);
+            EventLog?.WriteEntry($"{message}");
         }
 
         public void LogError(string message)
@@ -132,6 +137,7 @@ namespace DdUsvc
             var now = DateTime.UtcNow;
             Console.WriteLine("{0}: ERROR: {1}", now.ToString(), message);
             Publish("system.log.error", message);
+            EventLog?.WriteEntry($"{message}", EventLogEntryType.Error);
 
         }
 

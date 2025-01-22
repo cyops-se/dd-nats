@@ -32,6 +32,7 @@
     "@vue/cli-plugin-vuex": "~4.4.0",
     "@vue/cli-service": "^4.5.13",
     "@vue/eslint-config-standard": "^5.1.2",
+    "@vue/runtime-dom": "^3.5.13",
     "@vuetify/vue-cli-plugin-preset-base": "~0.3.2",
     "archiver": "^4.0.1",
     "babel-core": "7.0.0-bridge.0",

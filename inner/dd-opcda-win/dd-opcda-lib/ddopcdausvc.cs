@@ -11,9 +11,74 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Linq;
 using System.Diagnostics;
+using System.Xml.Linq;
+using System.Threading;
 
 namespace DdOpcDaLib
 {
+    public struct ServerStatus
+    {
+        [JsonProperty("progid")]
+        public string ProgId { get; set; }
+        [JsonProperty("currenttime")]
+        public DateTime CurrentTime { get; set; }
+        [JsonProperty("starttme")]
+        public DateTime StartTime { get; set; }
+        [JsonProperty("lastupdate")]
+        public DateTime LastUpdate { get; set; }
+        [JsonProperty("state")]
+        public OPCSERVERSTATE State { get; set; }
+        [JsonProperty("error")]
+        public string Error { get; set; }
+        [JsonProperty("bandwidth")]
+        public int BandWidth { get; set; }
+        [JsonProperty("groupcount")]
+        public int GroupCount { get; set; }
+        [JsonProperty("host")]
+        public string HostName { get; set; }
+        [JsonProperty("instance")]
+        public string Instance { get; set; }
+    }
+
+    public struct DataPoint
+    {
+        [JsonProperty("t")]
+        public DateTime Time { get; set; }
+        [JsonProperty("n")]
+        public string Name { get; set; }
+        [JsonProperty("v")]
+        public double Value { get; set; }
+        [JsonProperty("q")]
+        public int Quality { get; set; }
+        [JsonProperty("i")]
+        public string Instance { get; set; }
+    }
+
+    public struct DataMessage
+    {
+        [JsonProperty("version")]
+        public int Version { get; set; }
+        [JsonProperty("group")]
+        public string Group { get; set; }
+        [JsonProperty("interval")]
+        public int Interval { get; set; }
+        [JsonProperty("sequence")]
+        public int Sequence { get; set; }
+        [JsonProperty("count")]
+        public int Count { get; set; }
+        [JsonProperty("points")]
+        public DataPoint[] Points { get; set; }
+    }
+
+    public struct SamplingGroup
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public int SamplingTime { get; set; }
+        public string ProgId { get; set; }
+        public List<string> Tags { get; set; }
+    }
+
     public class DdOpcDaUsvc : DdUsvc.DdUsvc
     {
         // Types
@@ -29,6 +94,7 @@ namespace DdOpcDaLib
             GroupStateStopped = 1,
             GroupStateRunning = 2,
             GroupStateRunningWithWarning = 3,
+            GroupStateDisabled = 4,
         }
 
         public class OpcTagItem
@@ -47,6 +113,8 @@ namespace DdOpcDaLib
             public double Value { get; set; }
             [JsonProperty("quality")]
             public int Quality { get; set; }
+            [JsonProperty("instance")]
+            public string Instance { get; set; }
             [JsonProperty("Error")]
             public int Error { get; set; }
         }
@@ -169,47 +237,67 @@ namespace DdOpcDaLib
         protected List<OpcGroupItem> _groups;
         protected List<OpcTagItem> _tags;
         private System.Timers.Timer aTimer;
+        private string _instance;
 
         public DdOpcDaUsvc(string name, string[] args) : base(name, args)
         {
             Name = name;
-            LoadGroups("groups.csv");
-            LoadTags("tags.csv");
-            PrepareOpc();
             SetTimer();
+            _instance = settings["instance-id"];
 
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.tags.getall", this.GetAllTags);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.getall", this.GetAllGroups);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.start", this.StartGroup);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.groups.stop", this.StopGroup);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.getall", this.GetAllServers);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.root", this.GetOpcServerRoot);
-            this.Subscribe($"usvc.opc.{settings["instance-id"]}.servers.getbranch", this.GetOpcServerBranch);
+            this.Subscribe($"usvc.opc.{_instance}.tags.getall", this.GetAllTags);
+            this.Subscribe($"usvc.opc.{_instance}.groups.getall", this.GetAllGroups);
+            this.Subscribe($"usvc.opc.{_instance}.groups.start", this.StartGroup);
+            this.Subscribe($"usvc.opc.{_instance}.groups.stop", this.StopGroup);
+            this.Subscribe($"usvc.opc.{_instance}.servers.getall", this.GetAllServers);
+            this.Subscribe($"usvc.opc.{_instance}.servers.root", this.GetOpcServerRoot);
+            this.Subscribe($"usvc.opc.{_instance}.servers.getbranch", this.GetOpcServerBranch);
         }
 
         internal OpcServer ConnectServer(string progid)
         {
             if (_opcServers.ContainsKey(progid)) return _opcServers[progid];
 
-            var opcServer = new OpcServer();
-            try
+            // Try every 15 secs for a minute before giving up
+            for (var i = 0; i < 4; i++)
             {
-                LogEvent($"Connecting to OPC DA server with prog id: {progid}");
-                opcServer.Connect(progid);
-            }
-            catch (Exception ex)
-            {
-                LogEvent($"Failed to connect OPC DA server: {progid}, error: {ex.Message}");
-                return null;
+                var opcServer = new OpcServer();
+                try
+                {
+                    LogEvent($"Connecting to OPC DA server with prog id: {progid}");
+                    opcServer.Connect(progid);
+                    _opcServers[progid] = opcServer;
+                    return opcServer;
+                }
+                catch (Exception ex)
+                {
+                    LogEvent($"Failed to connect OPC DA server: {progid}, error: {ex.Message}. Retry attempts left: {4-i}");
+                    Thread.Sleep(15000);
+                }
             }
 
-            return opcServer;
+            return null;
+        }
+
+        public void Initialize()
+        {
+            LoadGroups("groups.csv");
+            LoadTags("tags.csv");
+            PrepareOpc();
+        }
+
+        public void Restart()
+        {
+            Shutdown();
+            Initialize();
+            Startup();
         }
 
         public void Startup()
         {
             foreach (var group in _groups)
             {
+                if (group == null || group.State == OpcGroupState.GroupStateDisabled) continue;
                 try
                 {
                     group.opcGroup.DataChanged += OpcGroup_DataChanged;
@@ -233,16 +321,19 @@ namespace DdOpcDaLib
         {
             foreach (var group in _groups)
             {
+                if (group == null || group.State == OpcGroupState.GroupStateDisabled) continue;
                 try
                 {
                     var opcGroup = group.opcGroup;
-                    if (opcGroup != null)
+                    if (opcGroup != null && group.State != OpcGroupState.GroupStateDisabled)
                     {
                         opcGroup.DataChanged -= OpcGroup_DataChanged;
                         opcGroup.CancelCompleted -= OpcGroup_CancelCompleted;
                         opcGroup.Remove(true);
                         group.opcGroup = null;
-                    }
+                        group.State = OpcGroupState.GroupStateStopped;
+                        LogEvent($"Group stopped due to shutdown request: {group.Name}, {group.Id}");
+                    } 
                 }
                 catch (Exception ex)
                 {
@@ -259,20 +350,24 @@ namespace DdOpcDaLib
                             opcServer.ShutdownRequested -= opcServer_ShutdownRequested;
                             opcServer.Disconnect();
                             _opcServers.Remove(group.ProgID);
+                            LogEvent($"OPCDA server stopped due to shutdown request: {group.ProgID}, {group.Id}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    LogEvent($"Exception caught when shutting down server:{ex.Message}");
+                    LogError($"Exception caught when shutting down server:{ex.Message}");
                 }
             }
+
+            _opcServers = null;
         }
 
         internal void LoadGroups(string filename)
         {
             try
             {
+                _opcServers = new Dictionary<string, OpcServer>();
                 _groups = new List<OpcGroupItem>();
                 string csvData = File.ReadAllText("groups.csv");
                 foreach (string row in csvData.Split('\n'))
@@ -292,12 +387,19 @@ namespace DdOpcDaLib
                         group.tags = new List<OpcTagItem>();
 
                         var opcServer = ConnectServer(group.ProgID);
-                        group.opcGroup = opcServer.AddGroup($"dd-opcda-group-{group.Id}", false, group.Interval * 1000);
-                        group.opcGroup.PercentDeadband = 0.0001f;
-                        group.opcGroup.RefreshState();
-                        Console.WriteLine($"Group id {group.Id} states, percentdeadband: {group.opcGroup.PercentDeadband}, interval: {group.opcGroup.UpdateRate}");
-                        group.opcItemDefinitions = new List<OpcItemDefinition>();
-                        group.invalidItemDefinitions = new List<OpcItemDefinition>();
+                        if (opcServer != null)
+                        {
+                            group.opcGroup = opcServer.AddGroup($"dd-opcda-group-{group.Id}", false, group.Interval * 1000);
+                            group.opcGroup.PercentDeadband = 0.0001f;
+                            group.opcGroup.RefreshState();
+                            Console.WriteLine($"Group id {group.Id} states, percentdeadband: {group.opcGroup.PercentDeadband}, interval: {group.opcGroup.UpdateRate}");
+                            group.opcItemDefinitions = new List<OpcItemDefinition>();
+                            group.invalidItemDefinitions = new List<OpcItemDefinition>();
+                        } else
+                        {
+                            group.State = OpcGroupState.GroupStateDisabled;
+                            LogError($"Failed to connect to OPCDA server: {group.ProgID}, for group: {group.Name}. Ignored!");
+                        }
 
                         _groups.Add(group);
                     }
@@ -337,10 +439,13 @@ namespace DdOpcDaLib
                             }
 
                             var group = _groups[groupid - 1]; // 1 based numbering in 0 based array
-                            var tag = new OpcTagItem() { Id = tagid++, GroupID = groupid, Group = group, Name = fields[0] };
-                            _tags.Add(tag);
-                            group.tags.Add(tag);
-                            group.opcItemDefinitions.Add(new OpcItemDefinition(tag.Name, true, tag.Id, VarEnum.VT_EMPTY));
+                            if (group != null && group.State != OpcGroupState.GroupStateDisabled)
+                            {
+                                var tag = new OpcTagItem() { Id = tagid++, GroupID = groupid, Group = group, Name = fields[0] };
+                                _tags.Add(tag);
+                                group.tags.Add(tag);
+                                group.opcItemDefinitions.Add(new OpcItemDefinition(tag.Name, true, tag.Id, VarEnum.VT_EMPTY));
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -361,6 +466,7 @@ namespace DdOpcDaLib
             // Initialize all groups
             foreach (var group in _groups)
             {
+                if (group == null || group.State == OpcGroupState.GroupStateDisabled) continue;
                 if (group.opcItemDefinitions.Count <= 0) continue;
                 var results = new OpcItemResult[group.opcItemDefinitions.Count];
                 group.opcGroup.ValidateItems(group.opcItemDefinitions.ToArray(), true, out results);
@@ -387,6 +493,7 @@ namespace DdOpcDaLib
         private void opcServer_ShutdownRequested(object sender, ShutdownRequestEventArgs e)
         {
             LogEvent($"ShutdownRequested: Reason:{e.ShutdownReason}");
+            Shutdown();
         }
 
 
@@ -409,6 +516,7 @@ namespace DdOpcDaLib
                             point.Name = tag.Name;
                             point.Value = Convert.ToDouble(s.DataValue);
                             point.Quality = s.Quality;
+                            point.Instance = _instance;
                             var payload = JsonConvert.SerializeObject(point);
                             byte[] bytes = Encoding.UTF8.GetBytes(payload);
                             broker.Publish("process.actual", bytes);
@@ -416,6 +524,7 @@ namespace DdOpcDaLib
                             tag.Time = point.Time;
                             tag.Value = point.Value;
                             tag.Quality = point.Quality;
+                            tag.Instance = point.Instance;
                         }
                         else
                         {
@@ -436,6 +545,8 @@ namespace DdOpcDaLib
 
         private void SetTimer()
         {
+            // Periodically send the last value every 10s for items not reporting new data
+            // and check server status
             aTimer = new System.Timers.Timer(1000);
             aTimer.Elapsed += ATimer_Elapsed; ;
             aTimer.AutoReset = true;
@@ -459,12 +570,48 @@ namespace DdOpcDaLib
                         point.Name = tag.Name;
                         point.Value = Convert.ToDouble(tag.Value);
                         point.Quality = 68; // Uncertain [Last usable] tag.Quality;
+                        point.Instance = _instance;
                         var payload = JsonConvert.SerializeObject(point);
                         byte[] bytes = Encoding.UTF8.GetBytes(payload);
                         broker.Publish("process.actual", bytes);
                         tag.Time = now;
                     }
                 }
+            }
+
+            try
+            {
+                foreach (var kv in _opcServers)
+                {
+                    var opcServer = (OpcServer)kv.Value;
+                    if (opcServer != null)
+                    {
+                        var status = opcServer.GetStatus();
+                        var msg = new ServerStatus();
+                        msg.ProgId = kv.Key;
+                        msg.State = status.eServerState;
+                        msg.LastUpdate = new DateTime(status.ftLastUpdateTime);
+                        msg.CurrentTime = new DateTime(status.ftCurrentTime);
+                        msg.StartTime = new DateTime(status.ftStartTime);
+                        msg.BandWidth = status.dwBandWidth;
+                        msg.GroupCount = status.dwGroupCount;
+                        msg.Instance = _instance;
+                        msg.HostName = System.Environment.MachineName;
+
+                        var payload = JsonConvert.SerializeObject(msg);
+                        byte[] bytes = Encoding.UTF8.GetBytes(payload);
+                        broker.Publish("process.opc.server.status", bytes);
+                    }
+                    else
+                    {
+                        LogEvent($"OPCDA server instance is NULL (unexpectedly)");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Exception caught when checking OPCDA servers: {ex.Message}");
+                Restart();
             }
         }
 
@@ -539,7 +686,7 @@ namespace DdOpcDaLib
                     {
                         response.StatusMessage = $"Group already running, group: {group.Name} (id: {group.Id})";
                     }
-                    else
+                    else if (group.State != OpcGroupState.GroupStateDisabled)
                     {
                         group.opcGroup.Active = true;
                         group.State = OpcGroupState.GroupStateRunning;
@@ -578,7 +725,7 @@ namespace DdOpcDaLib
                     {
                         response.StatusMessage = $"Group already stopped, group: {group.Name} (id: {group.Id})";
                     }
-                    else
+                    else if (group.State != OpcGroupState.GroupStateDisabled)
                     {
                         group.opcGroup.Active = false;
                         group.State = OpcGroupState.GroupStateStopped;

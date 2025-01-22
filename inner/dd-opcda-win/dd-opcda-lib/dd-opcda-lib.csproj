@@ -97,7 +97,6 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ddopcda.cs" />
     <Compile Include="ddopcdausvc.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

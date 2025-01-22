@@ -113,39 +113,12 @@
           >
             Edit selected
           </v-btn>
-          <!-- v-btn
-            color="primary"
-            dark
-            class="ml-3"
-            @click="exportCSV"
+          <v-icon
+            class="ml-4"
+            @click="refresh()"
           >
-            Export
-          </v-btn>
-          <v-btn
-            color="primary"
-            dark
-            class="ml-3"
-            @click="uploadDialog = !uploadDialog"
-          >
-            Import
-          </v-btn>
-          <v-btn
-            color="success"
-            dark
-            class="ml-3"
-            :disabled="saveDisabled"
-            @click="saveChanges"
-          >
-            Save changes
-          </v-btn -->
-          <!-- v-btn
-            color="primary"
-            dark
-            class="ml-3"
-            @click="refresh"
-          >
-            Refresh
-          </v-btn -->
+            mdi-reload
+          </v-icon>
         </v-toolbar>
       </template>
       <template
@@ -238,9 +211,15 @@
         ApiService.post('nats/request', request)
           .then(response => {
             this.items = response.data.items
-            this.items.forEach(i => { i.type = this.availableTypes[i.filtertype] })
-          }).catch(response => {
-            this.$notification.error('Failed to get tags: ' + response.data.statusmsg)
+            this.items.forEach(i => {
+              console.log('fixing item: ' + JSON.stringify(i))
+              i.type = this.availableTypes[i.filtertype]
+              i.datapoint.v = i.datapoint.v.toFixed(2)
+              i.previousvalue = i.previousvalue.toFixed(2)
+              i.integrator = i.integrator.toFixed(2)
+            })
+          }).catch(ex => {
+            this.$notification.error('Failed to get tags: ' + ex)
           })
       },
 

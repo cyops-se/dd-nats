@@ -10,6 +10,7 @@ namespace DdOpcDaCli
         {
             Console.WriteLine($"args.Length: {args.Length}");
             var svc = new DdOpcDaUsvc("dd-nats-opcda", args);
+            svc.Initialize();
             svc.Startup();
 
             svc.LogEvent("********** Press <Enter> to close **********");
