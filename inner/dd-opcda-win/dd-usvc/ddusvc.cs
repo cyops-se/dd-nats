@@ -77,6 +77,7 @@ namespace DdUsvc
     public interface IMessageBroker
     {
         string Url { get; set; }
+        bool AutoReconnect { get; set; }
         DdUsvcError Connect();
         DdUsvcError Disconnect();
         DdUsvcError Publish(string topic, byte[] data);

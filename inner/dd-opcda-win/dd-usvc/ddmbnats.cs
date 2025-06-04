@@ -11,8 +11,10 @@ namespace DdUsvc
     internal class DdUsvcNatsBroker : IMessageBroker
     {
         public string Url { get => _url; set => _url = Url; }
+        public bool AutoReconnect { get => _autoReconnect; set => _autoReconnect = value; }
         private NATS.Client.IConnection _connection;
-        private string _url;
+        private string _url = "nats://localhost:4222";
+        private bool _autoReconnect = true;
 
         public DdUsvcNatsBroker(string url)
         {
