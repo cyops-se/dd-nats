@@ -1,0 +1,272 @@
+﻿using DdUsvc;
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using System.Diagnostics;
+using System.Configuration;
+
+namespace DdUsvc
+{
+    public class StatusResponse
+    {
+        [JsonProperty("success")]
+        public bool Success { get; set; }
+        [JsonProperty("statusmsg")]
+        public string StatusMessage { get; set; }
+    }
+
+    public class GetSettingsResponse : StatusResponse
+    {
+        [JsonProperty("items")]
+        public Dictionary<string, string> Items { get; set; }
+
+    }
+
+    public class SetSettingsResponse
+    {
+        [JsonProperty("items")]
+        public Dictionary<string, string> Items { get; set; }
+
+    }
+
+    public enum DdUsvcErrorCode
+    {
+        OK = 0,
+        Error = 1,
+    }
+
+    public struct DdUsvcError
+    {
+        public DdUsvcErrorCode Code { get; set; }
+        public string Reason { get; set; }
+    }
+
+    public struct DdUsvcResponse
+    {
+        public DdUsvcError Error { get; set; }
+        public byte[] Payload { get; set; }
+    }
+
+    public struct DdUsvcHeartbeat
+    {
+        [JsonProperty("hostname")]
+        public string Hostname { get; set; }
+        [JsonProperty("appname")]
+        public string Name { get; set; }
+        [JsonProperty("version")]
+        public string Version { get; set; }
+        [JsonProperty("identity")]
+        public string Identity { get; set; }
+        [JsonProperty("timestamp")]
+        public string Timestamp { get; set; }
+
+        public DdUsvcHeartbeat(string hostname, string name, string version, string timestamp, string identity)
+        {
+            Hostname = hostname;
+            Name = name;
+            Version = version;
+            Timestamp = timestamp;
+            Identity = identity;
+        }
+    }
+
+    public delegate DdUsvcError IMessageHandler(string topic, string responsetopic, byte[] data);
+
+    public interface IMessageBroker
+    {
+        string Url { get; set; }
+        bool AutoReconnect { get; set; }
+        DdUsvcError Connect();
+        DdUsvcError Disconnect();
+        DdUsvcError Publish(string topic, byte[] data);
+        byte[] Request(string topic, byte[] data);
+        void Subscribe(string topic, IMessageHandler callback);
+    }
+
+    public class DdUsvc
+    {
+        public string Name { get; set; }
+        public string Version { get; set; }
+        protected Dictionary<string, string> settings;
+        protected DdUsvcError lasterror;
+        protected static IMessageBroker broker;
+
+        private static EventLog eventLog = null;
+        public static EventLog EventLog { get => eventLog; set => eventLog = value; }
+
+        public DdUsvc(string name, string[] args)
+        {
+            this.Name = name;
+            this.Version = "1";
+            settings = initSettings(args);
+            broker = ddmb.NewMessageBroker(settings["url"]);
+            if (broker == null) throw new Exception("Failed to create broker with url: {0}");
+            broker.Connect();
+
+            var shortname = name.Replace("-", "");
+            this.Subscribe($"usvc.{shortname}.{settings["instance-id"]}.settings.get", this.getSettings);
+            this.Subscribe($"usvc.{shortname}.{settings["instance-id"]}.settings.set", this.setSettings);
+
+            Task heartbeat = Task.Run(() => this.sendHeartbeat());
+        }
+
+        public DdUsvcError Publish(string topic, object payload)
+        {
+            var data = JsonConvert.SerializeObject(payload);
+            byte[] bytes = Encoding.UTF8.GetBytes(data);
+            this.lasterror = broker.Publish(topic, bytes);
+            return this.lasterror;
+        }
+        public DdUsvcResponse Request(string topic, object payload)
+        {
+            var data = JsonConvert.SerializeObject(payload ?? new { });
+            var bytes = Encoding.UTF8.GetBytes(data);
+            byte[] reply = null;
+            try
+            {
+                var brokerRequestCapable = broker as dynamic;
+                reply = brokerRequestCapable.Request(topic, bytes);
+            }
+            catch
+            {
+                return new DdUsvcResponse
+                {
+                    Error = new DdUsvcError { Code = DdUsvcErrorCode.Error, Reason = "Request not supported by this broker." }
+                };
+            }
+
+            if (reply == null || reply.Length == 0)
+            {
+                return new DdUsvcResponse
+                {
+                    Error = new DdUsvcError { Code = DdUsvcErrorCode.Error, Reason = "Empty or null reply." }
+                };
+            }
+
+            try
+            {
+                var json = Encoding.UTF8.GetString(reply);
+                    var deserialized = JsonConvert.DeserializeObject<DdUsvcResponse>(json);
+                    if (deserialized.Equals(default(DdUsvcResponse)))
+                    {
+                        return new DdUsvcResponse { Error = new DdUsvcError { Code = DdUsvcErrorCode.Error, Reason = "Failed to deserialize response." } };
+                    }
+                    return deserialized;
+            }
+            catch (Exception ex)
+            {
+                return new DdUsvcResponse { Error = new DdUsvcError { Code = DdUsvcErrorCode.Error, Reason = "Deserialize error: " + ex.Message } };
+            }
+        }
+        public void Subscribe(string topic, IMessageHandler callback)
+        {
+            broker.Subscribe(topic, callback);
+        }
+
+        public void LogEvent(string message)
+        {
+            var now = DateTime.UtcNow;
+            Console.WriteLine("{0}: INFO: {1}", now.ToString(), message);
+            Publish("system.log.info", message);
+            EventLog?.WriteEntry($"{message}");
+        }
+
+        public void LogError(string message)
+        {
+            var now = DateTime.UtcNow;
+            Console.WriteLine("{0}: ERROR: {1}", now.ToString(), message);
+            Publish("system.log.error", message);
+            EventLog?.WriteEntry($"{message}", EventLogEntryType.Error);
+
+        }
+
+        internal Dictionary<string, string> initSettings(string[] args)
+        {
+            var s = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string cfgUrl = null;
+            string cfgInstance = null;
+            string cfgWorkdir = null;
+            string cfgDiscovery = null;
+            string cfgMetaTimerEnabled = null;
+            try
+            {
+                cfgUrl = ConfigurationSettings.AppSettings["url"];
+                cfgInstance = ConfigurationSettings.AppSettings["instance-id"];
+                cfgWorkdir = ConfigurationSettings.AppSettings["workdir"];
+                cfgDiscovery = ConfigurationSettings.AppSettings["discovery-urls"];
+                cfgMetaTimerEnabled = ConfigurationSettings.AppSettings["tag-meta-timer-enabled"];
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Warning: unable to read AppSettings: " + ex.Message);
+            }
+            s["url"] = (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
+                ? args[0]
+                : (!string.IsNullOrWhiteSpace(cfgUrl) ? cfgUrl : "nats://127.0.0.1:4222");
+
+            s["instance-id"] = (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+                ? args[1]
+                : (!string.IsNullOrWhiteSpace(cfgInstance) ? cfgInstance : "default");
+
+            s["workdir"] = (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+                ? args[2]
+                : (!string.IsNullOrWhiteSpace(cfgWorkdir) ? cfgWorkdir : AppDomain.CurrentDomain.BaseDirectory);
+
+            s["discovery-urls"] = (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]))
+                ? args[3]
+                : (!string.IsNullOrWhiteSpace(cfgDiscovery) ? cfgDiscovery : "");
+
+            s["tag-meta-timer-enabled"] = (args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]))
+                ? args[4]
+                : (!string.IsNullOrWhiteSpace(cfgMetaTimerEnabled) ? cfgMetaTimerEnabled : "false");
+
+            return s;
+        }
+
+        internal void sendHeartbeat()
+        {
+            var hostname = System.Environment.MachineName;
+            var now = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fffK");
+            var heartbeat = new DdUsvcHeartbeat(hostname, Name, Version, now, settings["instance-id"]);
+            while (true)
+            {
+                heartbeat.Timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fffK");
+                this.Publish("system.heartbeat", heartbeat);
+                Thread.Sleep(1000);
+            }
+        }
+
+        internal DdUsvcError getSettings(string topic, string responsetopic, byte[] data)
+        {
+            try
+            {
+                var response = new GetSettingsResponse();
+                response.Items = settings;
+                response.Success = true;
+
+                this.Publish(responsetopic, response);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                lasterror.Code = DdUsvcErrorCode.Error;
+                lasterror.Reason = ex.Message;
+            }
+
+            return this.lasterror;
+        }
+
+        internal DdUsvcError setSettings(string topic, string responsetopic, byte[] data)
+        {
+            var response = new StatusResponse();
+            response.Success = false;
+            response.StatusMessage = "Sorry, it is not possible to modify settings yet in the .NET version!";
+            this.Publish(responsetopic, response);
+
+            return this.lasterror;
+        }
+    }
+}
