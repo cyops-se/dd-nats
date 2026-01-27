@@ -5,7 +5,7 @@
 </template>
 
 <script>
-  // Styles
+// Styles
   import '@/styles/overrides.sass'
   import { dispatch, sync } from 'vuex-pathify'
   import WebsocketService from '@/services/websocket.service'

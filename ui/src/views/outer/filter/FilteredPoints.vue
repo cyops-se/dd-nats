@@ -15,7 +15,7 @@
       show-select
       class="elevation-1"
     >
-      <template v-slot:top>
+      <template #top>
         <v-toolbar
           flat
         >
@@ -122,7 +122,7 @@
         </v-toolbar>
       </template>
       <template
-        v-slot:item.actions="{ item }"
+        #item.actions="{ item }"
       >
         <v-icon
           v-if="!item.new"

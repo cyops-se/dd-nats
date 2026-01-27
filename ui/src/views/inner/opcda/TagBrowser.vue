@@ -35,7 +35,7 @@
                   :filter="filter"
                   :search="search"
                 >
-                  <template v-slot:prepend="{ item, open }">
+                  <template #prepend="{ item, open }">
                     <v-icon v-if="!item.file">
                       {{ open ? 'mdi-folder-open' : 'mdi-folder' }}
                     </v-icon>
@@ -89,7 +89,7 @@
     },
 
     created () {
-      // this.refresh()
+    // this.refresh()
     },
 
     mounted () {

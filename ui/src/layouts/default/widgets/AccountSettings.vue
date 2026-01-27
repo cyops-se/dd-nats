@@ -11,9 +11,9 @@
 
     components: {
       DefaultList: () => import(
-        /* webpackChunkName: "default-list" */
-        '../List'
-      ),
+      /* webpackChunkName: "default-list" */
+      '../List'
+    ),
     },
 
     data: () => ({

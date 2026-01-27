@@ -26,7 +26,7 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { sync } from 'vuex-pathify'
 
   export default {

@@ -21,15 +21,15 @@ const actions = {
     if (!IN_BROWSER) return
 
     ApiService.get('user/current')
-    .then((data) => {
-      var user = data.data
-      for (const key in user) {
-        if (state[key]) {
-          commit(key, user[key])
+      .then((data) => {
+        var user = data.data
+        for (const key in user) {
+          if (state[key]) {
+            commit(key, user[key])
+          }
         }
-      }
-    })
-    .catch((e) => { console.log('user update failed', e) })
+      })
+      .catch((e) => { console.log('user update failed', e) })
 
     localStorage.setItem('vuetify@user', JSON.stringify(state))
   },
@@ -49,8 +49,8 @@ const actions = {
 
     localStorage.setItem('vuetify@user', JSON.stringify(state))
     ApiService.put('data/settings', state.settings)
-    .then((data) => { })
-    .catch((e) => { console.log('user setting update failed') })
+      .then((data) => { })
+      .catch((e) => { console.log('user setting update failed') })
   },
 }
 

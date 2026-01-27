@@ -16,24 +16,24 @@
 
     components: {
       DefaultBar: () => import(
-        /* webpackChunkName: "default-app-bar" */
-        './AppBar'
-      ),
+      /* webpackChunkName: "default-app-bar" */
+      './AppBar'
+    ),
       DefaultDrawer: () => import(
-        /* webpackChunkName: "default-drawer" */
-        './Drawer'
-      ),
+      /* webpackChunkName: "default-drawer" */
+      './Drawer'
+    ),
       DefaultFooter: () => import(
-        /* webpackChunkName: "default-footer" */
-        './Footer'
-      ),
+      /* webpackChunkName: "default-footer" */
+      './Footer'
+    ),
       DefaultView: () => import(
-        /* webpackChunkName: "default-view" */
-        './View'
-      ),
-      // DashboardCoreSettings: () => import(
-      //   './Settings'
-      // ),
+      /* webpackChunkName: "default-view" */
+      './View'
+    ),
+    // DashboardCoreSettings: () => import(
+    //   './Settings'
+    // ),
     },
 
     created () {

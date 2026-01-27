@@ -7,7 +7,7 @@
       sort-by="path"
       class="elevation-1 text-no-wrap"
     >
-      <template v-slot:top>
+      <template #top>
         <v-toolbar
           flat
         >

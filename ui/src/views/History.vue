@@ -45,7 +45,7 @@
           show-select
           class="elevation-1"
         >
-          <template v-slot:top>
+          <template #top>
             <v-toolbar flat>
               <v-toolbar-title>Resend tag values</v-toolbar-title>
               <v-divider

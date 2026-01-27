@@ -1,0 +1,3 @@
+name;groupid
+ns=2;s=1:Quickstarts.HistoricalAccessServer.Data.Sample.Float.txt;1
+ns=2;s=1:Quickstarts.HistoricalAccessServer.Data.Sample.Double.txt;1

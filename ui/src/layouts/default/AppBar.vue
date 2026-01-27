@@ -39,7 +39,7 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { get, sync } from 'vuex-pathify'
   import UsvcMiniCard from '../../components/usvc/UsvcMiniCard.vue'
 
@@ -52,9 +52,9 @@
       //   './widgets/Account'
       // ),
       DefaultDrawerToggle: () => import(
-        /* webpackChunkName: "default-drawer-toggle" */
-        './widgets/DrawerToggle'
-      ),
+      /* webpackChunkName: "default-drawer-toggle" */
+      './widgets/DrawerToggle'
+    ),
       UsvcMiniCard,
     },
 

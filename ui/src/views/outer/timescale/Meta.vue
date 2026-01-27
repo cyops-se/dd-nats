@@ -12,7 +12,7 @@
       :search="search"
       class="elevation-1"
     >
-      <template v-slot:top>
+      <template #top>
         <v-toolbar
           flat
         >
@@ -130,7 +130,7 @@
           </v-btn>
         </v-toolbar>
       </template>
-      <template v-slot:item.actions="{ item }">
+      <template #item.actions="{ item }">
         <v-icon
           class="mr-2"
           @click="editItem(item)"
@@ -457,15 +457,15 @@
           })
         this.close()
 
-        // var t = this
-        // console.log('posting: ' + JSON.stringify(this.items))
-        // ApiService.post('modbus/tag/changes', this.items)
-        //   .then(response => {
-        //     t.$notification.success('Changes saved')
-        //     t.update()
-        //   }).catch(function (response) {
-        //     t.$notification.error('Failed to save changes: ' + response)
-        //   })
+      // var t = this
+      // console.log('posting: ' + JSON.stringify(this.items))
+      // ApiService.post('modbus/tag/changes', this.items)
+      //   .then(response => {
+      //     t.$notification.success('Changes saved')
+      //     t.update()
+      //   }).catch(function (response) {
+      //     t.$notification.error('Failed to save changes: ' + response)
+      //   })
       },
     },
   }

@@ -422,21 +422,21 @@ namespace DdOpcUaLib
 
             try
             {
-                string defaultDiscoveryUrl = "opc.tcp://localhost:4840";
-                Console.WriteLine("Using default discovery URL: " + defaultDiscoveryUrl);
+                //string defaultDiscoveryUrl = "opc.tcp://localhost:4840";
+                //Console.WriteLine("Using default discovery URL: " + defaultDiscoveryUrl);
                 var config = OpcUaConnection.GetApplicationConfiguration();
-                try
-                {
-                    using (var discoveryClient = DiscoveryClientSafeCreate(config, new Uri(defaultDiscoveryUrl)))
-                    {
-                        if (discoveryClient != null)
-                            BrowseAndConnect(discoveryClient, defaultDiscoveryUrl, ref id, serverItems);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogError($"Error discovering servers from default URL: {ex.Message}, continuing with additional discovery URLs...");
-                }
+                //try
+                //{
+                //    using (var discoveryClient = DiscoveryClientSafeCreate(config, new Uri(defaultDiscoveryUrl)))
+                //    {
+                //        if (discoveryClient != null)
+                //            BrowseAndConnect(discoveryClient, defaultDiscoveryUrl, ref id, serverItems);
+                //    }
+                //}
+                //catch (Exception ex)
+                //{
+                //    LogError($"Error discovering servers from default URL: {ex.Message}, continuing with additional discovery URLs...");
+                //}
 
                 string additionalUrls = settings.ContainsKey("discovery-urls") ? settings["discovery-urls"] : null;
                 if (!string.IsNullOrWhiteSpace(additionalUrls))
@@ -742,7 +742,8 @@ namespace DdOpcUaLib
                     List<TagInfo> tags = null;
                     try
                     {
-                        tags = new OpcUaTagBrowser().BrowseTags(session);
+                        // tags = new OpcUaTagBrowser().BrowseTags(session);
+                        tags = browser.BrowseTags(session);
                     }
                     catch (Exception bx)
                     {
@@ -898,7 +899,7 @@ namespace DdOpcUaLib
                 point.Instance = _instance;
                 var payload = JsonConvert.SerializeObject(point);
                 byte[] bytes = Encoding.UTF8.GetBytes(payload);
-                LogEvent("Data changed: " + payload);
+                // LogEvent("Data changed: " + payload);
                 broker.Publish("process.actual", bytes);
             }
             catch (Exception ex)
@@ -918,7 +919,19 @@ namespace DdOpcUaLib
 
                 if (!File.Exists(filename))
                 {
-                    LogError("Groups file not found: " + filename);
+                    LogError("Groups file not found: " + filename + ", creating a single one second group ...");
+                    var group = new OpcGroupItem { Id = 1, DefaultGroup = true, Interval = 1, RunAtStart = true, ProgID = _opcServers.FirstOrDefault().Key };
+                    _groups.Add(group);
+
+                    OpcUaConnection opcServer;
+                    if (!_opcServers.TryGetValue(group.ProgID, out opcServer))
+                    {
+                        if (!opcServer.ConnectToServer(group.ProgID))
+                        {
+                            LogError($"Reconnect failed to {group.ProgID} for group {group.Name}. Disabling group.");
+                            group.State = OpcGroupState.GroupStateDisabled;
+                        }
+                    }
                     return;
                 }
 
@@ -1069,7 +1082,17 @@ namespace DdOpcUaLib
 
                 if (!File.Exists(filename))
                 {
-                    LogEvent($"Tags file not found: {filename}");
+                    LogEvent($"Tags file not found: {filename}, loading all tags ...");
+
+                    List<OpcTagMetaInfo> items = GetAllTagsUnfilteredInternal();
+                    foreach (var item in items)
+                    {
+                        var group = _groups[0];
+                        var tag = new OpcTagItem { Name = item.Name, Group = group, GroupID = 1 };
+                        _tags.Add(tag);
+                        if (group.tags == null) group.tags = new List<OpcTagItem>();
+                        group.tags.Add(tag);
+                    }
                     return;
                 }
 

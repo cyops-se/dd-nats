@@ -38,7 +38,7 @@
           height="150"
           item-height="50"
         >
-          <template v-slot:default="{ item }">
+          <template #default="{ item }">
             <v-list-item :key="item.name">
               <v-list-item-content>
                 <v-list-item-title>

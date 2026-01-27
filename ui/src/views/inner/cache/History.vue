@@ -2,72 +2,32 @@
   <v-container fluid>
     <v-row>
       <v-col>
-        <simple-info-card
-          icon="mdi-clipboard-file-outline"
-          color="primary"
-          :value="info.count.toString()"
-          title="Files in cache"
-        />
+        <simple-info-card icon="mdi-clipboard-file-outline" color="primary" :value="info.count.toString()"
+          title="Files in cache" />
       </v-col>
       <v-col>
-        <simple-info-card
-          icon="mdi-harddisk"
-          color="primary"
-          :value="info.sizeinmb"
-          title="Total size in MB"
-        />
+        <simple-info-card icon="mdi-harddisk" color="primary" :value="info.sizeinmb" title="Total size in MB" />
       </v-col>
       <v-col md="4">
-        <simple-info-card
-          icon="mdi-clipboard-clock-outline"
-          color="secondary"
-          :value="info.firsttime.replace('T', ' ').replace('Z','')"
-          title="First available time (UTC)"
-        />
+        <simple-info-card icon="mdi-clipboard-clock-outline" color="secondary"
+          :value="info.firsttime.replace('T', ' ').replace('Z', '')" title="First available time (UTC)" />
       </v-col>
       <v-col md="4">
-        <simple-info-card
-          icon="mdi-clipboard-clock-outline"
-          color="secondary"
-          :value="info.lasttime.replace('T', ' ').replace('Z','')"
-          title="Last available time (UTC)"
-        />
+        <simple-info-card icon="mdi-clipboard-clock-outline" color="secondary"
+          :value="info.lasttime.replace('T', ' ').replace('Z', '')" title="Last available time (UTC)" />
       </v-col>
     </v-row>
     <v-row>
       <v-col>
-        <v-data-table
-          v-model="selected"
-          :headers="headers"
-          :items="items"
-          item-key="filename"
-          :search="search"
-          show-select
-          class="elevation-1 text-no-wrap"
-        >
-          <template v-slot:top>
+        <v-data-table v-model="selected" :headers="headers" :items="items" item-key="filename" :search="search"
+          show-select class="elevation-1 text-no-wrap">
+          <template #top>
             <v-toolbar flat>
               <v-toolbar-title>Resend tag values</v-toolbar-title>
-              <v-divider
-                class="mx-4"
-                inset
-                vertical
-              />
+              <v-divider class="mx-4" inset vertical />
               <v-spacer />
-              <v-text-field
-                v-model="search"
-                append-icon="mdi-magnify"
-                label="Search"
-                single-line
-                hide-details
-              />
-              <v-btn
-                color="success"
-                dark
-                class="ml-3"
-                :disabled="selected.length === 0"
-                @click="resend"
-              >
+              <v-text-field v-model="search" append-icon="mdi-magnify" label="Search" single-line hide-details />
+              <v-btn color="success" dark class="ml-3" :disabled="selected.length === 0" @click="resend">
                 Send again
               </v-btn>
             </v-toolbar>
@@ -128,15 +88,14 @@
       selecteditems: [],
     }),
 
-    created () {
+    created() {
       this.refresh()
     },
 
     methods: {
-      initialize () {},
+      initialize() { },
 
-      refresh () {
-        this.loading = true
+      refresh() {
         var request = { subject: 'usvc.cache.getall', payload: {} }
         ApiService.post('nats/request', request)
           .then((response) => {
@@ -148,19 +107,17 @@
             for (var i = 0; i < this.items.length; i++) {
               this.items[i].time = this.items[i].time.replace('T', ' ').replace('Z', '')
             }
-            this.loading = false
           })
           .catch((e) => {
             console.log('ERROR response: ' + JSON.stringify(e.message))
           })
       },
 
-      resend () {
-        ApiService.post('system/resend', this.selected)
+      resend() {
+        var request = { subject: 'usvc.cache.resend', payload: { items: this.selected } }
+        ApiService.post('nats/request', request)
           .then((response) => {
-            this.$notification.success(
-              'Number of resent files: ' + response.data.count,
-            )
+            console.log('response: ' + JSON.stringify(response))
           })
           .catch((e) => {
             console.log('ERROR response: ' + JSON.stringify(e.message))

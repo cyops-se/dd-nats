@@ -1,12 +1,15 @@
-﻿using DdOpcUaLib;
+﻿using dd_opcua_lib;
+using DdOpcUaLib;
+using Microsoft.Extensions.Logging;
 using Opc.Ua;
 using Opc.Ua.Client;
+using Opc.Ua.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using dd_opcua_lib;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace dd_opcua_lib
 {
@@ -21,6 +24,7 @@ namespace dd_opcua_lib
     public class OpcUaConnection : IDisposable
     {
         public Session OpcSession { get; set; } = null;
+        private static ApplicationInstance Application { get; set; } = null;
         private static ApplicationConfiguration Config { get; set; } = null;
         private static string ClientName = "aCurve OPC UA (HA) Client";
 
@@ -31,7 +35,7 @@ namespace dd_opcua_lib
                 return Config;
             }
             ClientName = clientName;
-            string certStorePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\UAClient\pki\";
+            string certStorePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\OpcUaConnector\pki\";
 
             var config = new ApplicationConfiguration()
             {
@@ -39,8 +43,10 @@ namespace dd_opcua_lib
                 ApplicationType = ApplicationType.Client,
                 SecurityConfiguration = new SecurityConfiguration
                 {
-                    ApplicationCertificate = new CertificateIdentifier(),
                     AutoAcceptUntrustedCertificates = true,
+                    AddAppCertToTrustedStore = true,
+                    // ApplicationCertificate = new CertificateIdentifier { StoreType = "Directory", StorePath = certStorePath + "own", SubjectName = "CN=dd-nats Opc Ua connector, C=SE, O=cyops, DC=localhost" },
+                    ApplicationCertificates = ApplicationConfigurationBuilder.CreateDefaultApplicationCertificates( "CN=dd-nats Opc Ua connector, C=SE, O=cyops, DC=localhost", CertificateStoreType.Directory, certStorePath + @"own"),
                     TrustedPeerCertificates = new CertificateTrustList { StoreType = "Directory", StorePath = certStorePath + "trusted" },
                     TrustedIssuerCertificates = new CertificateTrustList { StoreType = "Directory", StorePath = certStorePath + "issuers" },
                     RejectedCertificateStore = new CertificateTrustList { StoreType = "Directory", StorePath = certStorePath + "rejected" }
@@ -51,6 +57,9 @@ namespace dd_opcua_lib
             };
             config.Validate(ApplicationType.Client).GetAwaiter().GetResult();
             Config = config;
+
+            Application = new ApplicationInstance(config);
+            Application.CheckApplicationInstanceCertificatesAsync(false).AsTask().Wait();
             return config;
         }
 
@@ -106,6 +115,7 @@ namespace dd_opcua_lib
                 ).GetAwaiter().GetResult();
 
                 OpcSession = session;
+                session.SessionClosing += Session_SessionClosing;
                 return session != null && session.Connected;
             }
             catch (Exception ex)
@@ -114,6 +124,11 @@ namespace dd_opcua_lib
                 OpcSession = null;
                 return false;
             }
+        }
+
+        private void Session_SessionClosing(object sender, EventArgs e)
+        {
+            Console.WriteLine($"Sesssion closing event recevied.");
         }
 
         public void Dispose()
@@ -376,7 +391,7 @@ namespace dd_opcua_lib
 
         private void HandleNotification(OpcTagItem tagRef, MonitoredItem monitoredItem, MonitoredItemNotificationEventArgs args)
         {
-            Service.LogEvent($"Notification received for tag '{tagRef?.Name}' (NodeId: {tagRef?.Name})");
+            // Service.LogEvent($"Notification received for tag '{tagRef?.Name}' (NodeId: {tagRef?.Name})");
             if (tagRef == null) return;
 
             try
@@ -491,7 +506,10 @@ namespace dd_opcua_lib
                 return tags;
             try
             {
-                BrowseTagsRecursive(session, ObjectIds.ObjectsFolder, tags);
+                // BrowseTagsRecursive(session, ObjectIds.ObjectsFolder, tags);
+                Console.WriteLine($"Browsing tags recursively beginning at ns=2;s=Path");
+                var nodeid = TryParseNodeId("ns=2;s=Path");
+                BrowseTagsRecursive(session, nodeid, tags);
             }
             catch (Exception e)
             {
@@ -511,24 +529,26 @@ namespace dd_opcua_lib
                 if (node == null)
                     return false;
 
-                if (node.TypeDefinitionId != null)
-                {
-                    var typeDefId = ExpandedNodeId.ToNodeId(node.TypeDefinitionId, session.NamespaceUris);
-                    if (typeDefId == VariableTypeIds.PropertyType)
-                        return false;
-                }
+                return node.Historizing;
 
-                if (node.ValueRank != ValueRanks.Scalar && node.ValueRank != ValueRanks.Any && node.ValueRank != ValueRanks.ScalarOrOneDimension)
-                    return false;
+                //if (node.TypeDefinitionId != null)
+                //{
+                //    var typeDefId = ExpandedNodeId.ToNodeId(node.TypeDefinitionId, session.NamespaceUris);
+                //    if (typeDefId == VariableTypeIds.PropertyType)
+                //        return false;
+                //}
 
-                var dt = node.DataType;
-                if (dt == null) return false;
+                //if (node.ValueRank != ValueRanks.Scalar && node.ValueRank != ValueRanks.Any && node.ValueRank != ValueRanks.ScalarOrOneDimension)
+                //    return false;
 
-                var allowed = _allowedDataTypes;
-                if (!allowed.Contains(dt))
-                    return false;
+                //var dt = node.DataType;
+                //if (dt == null) return false;
 
-                return true;
+                //var allowed = _allowedDataTypes;
+                //if (!allowed.Contains(dt))
+                //    return false;
+
+                //return true;
             }
             catch
             {
@@ -577,8 +597,10 @@ namespace dd_opcua_lib
             }
         }
 
+        Dictionary<string, TagInfo> _ledger = new Dictionary<string, TagInfo>();
         private void BrowseTagsRecursive(Session session, NodeId nodeId, List<TagInfo> tags)
         {
+            if (tags.Count > 50) return;
             if (session == null) return;
             Browser browser = null;
             try
@@ -591,11 +613,23 @@ namespace dd_opcua_lib
                     IncludeSubtypes = true
                 };
             }
-            catch { return; }
+            catch (Exception ex) {
+                Console.WriteLine($"Error while browsing tags recursively. Failed to create browser from session: {ex.Message}");
+                return;
+            }
 
             ReferenceDescriptionCollection refs = null;
-            try { refs = browser.Browse(nodeId); } catch { return; }
-            if (refs == null) return;
+            try { refs = browser.Browse(nodeId); } catch (Exception ex)
+            {
+                Console.WriteLine($"Error while browsing tags recursively. Failed to create browser from session: {ex.Message}");
+                return;
+            }
+
+            if (refs == null)
+            {
+                Console.WriteLine($"Error while browsing tags recursively. refs == null");
+                return;
+            }
 
             for (int r = 0; r < refs.Count; r++)
             {
@@ -605,24 +639,40 @@ namespace dd_opcua_lib
                 {
                     childId = ExpandedNodeId.ToNodeId(rd.NodeId, session.NamespaceUris);
                 }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error while browsing tags recursively. ToNodeId failed: {ex.Message}");
+                    continue;
+                }
 
                 if ((rd.NodeClass & NodeClass.Variable) != 0 && IsTimeSeriesVariable(session, childId, rd))
                 {
                     try
                     {
-                        var tag = new TagInfo
+                        var cni = CanonicalNodeIdFromReference(session, rd);
+                        if (!_ledger.ContainsKey(cni))
                         {
-                            NodeId = CanonicalNodeIdFromReference(session, rd),
-                            Name = CanonicalNodeIdFromReference(session, rd),
-                            Description = SafeGetDescription(session, childId),
-                            EngineeringUnit = SafeGetEngineeringUnit(session, childId),
-                            MinValue = SafeGetPropertyDouble(session, childId, "EURange", true),
-                            MaxValue = SafeGetPropertyDouble(session, childId, "EURange", false)
-                        };
-                        tags.Add(tag);
+                            var tag = new TagInfo
+                            {
+                                NodeId = CanonicalNodeIdFromReference(session, rd),
+                                //Name = CanonicalNodeIdFromReference(session, rd),
+                                //Description = SafeGetDescription(session, childId),
+                                //EngineeringUnit = SafeGetEngineeringUnit(session, childId),
+                                //MinValue = SafeGetPropertyDouble(session, childId, "EURange", true),
+                                //MaxValue = SafeGetPropertyDouble(session, childId, "EURange", false)
+                            };
+                            tag.Name = tag.NodeId;
+                            tags.Add(tag);
+                            _ledger.Add(cni, tag);
+                            Console.WriteLine($"Tag added: {tag.NodeId}");
+                        }
+                        continue; // Don't bother with children to this node
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error while browsing tags recursively. Failed to create or add TagInfo object: {ex.Message}");
+                        continue;
+                    }
                 }
 
                 if ((rd.NodeClass & NodeClass.Object) != 0)
@@ -710,11 +760,13 @@ namespace dd_opcua_lib
 
         public BrowserPosition BrowseRootNode(Session session)
         {
-            return BrowseBranch(session, null);
+            Console.WriteLine("Browsing root node at ns=2;s=Path");
+            return BrowseBranch(session, "ns=2;s=Path");
         }
 
         internal BrowserPosition BrowseBranch(Session opcSession, string branch)
         {
+            Console.WriteLine($"Trying to browse branch {branch}");
             var response = new BrowserPosition
             {
                 Success = false,
@@ -726,14 +778,15 @@ namespace dd_opcua_lib
             {
                 if (opcSession == null || !opcSession.Connected)
                 {
+                    Console.WriteLine($"Session not connected ... aborting");
                     response.StatusMessage = "Session not connected";
                     return response;
                 }
                 NodeId currentNode = ObjectIds.ObjectsFolder;
                 string originalBranch = branch;
 
-                if (!string.IsNullOrWhiteSpace(branch) &&
-                    !branch.Equals("root", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(branch) ) //&&
+                    //!branch.Equals("root", StringComparison.OrdinalIgnoreCase))
                 {
                     NodeId explicitId = TryParseNodeId(branch);
                     if (explicitId != null)
@@ -758,6 +811,7 @@ namespace dd_opcua_lib
                         }
                     }
                 }
+
                 Browser browser = new Browser(opcSession)
                 {
                     BrowseDirection = BrowseDirection.Forward,
