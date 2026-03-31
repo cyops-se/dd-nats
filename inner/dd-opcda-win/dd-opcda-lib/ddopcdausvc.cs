@@ -242,7 +242,7 @@ namespace DdOpcDaLib
         public DdOpcDaUsvc(string name, string[] args) : base(name, args)
         {
             Name = name;
-            SetTimer();
+            // SetTimer(); The periodic sending of last value for tags not seen in a while is moved to the filter function outside of the diode instead
             _instance = settings["instance-id"];
 
             this.Subscribe($"usvc.opc.{_instance}.tags.getall", this.GetAllTags);

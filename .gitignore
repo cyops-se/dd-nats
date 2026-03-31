@@ -51,3 +51,4 @@ inner/dd-opcua-win/dd-opcua-svc/obj/
 inner/dd-opcua-win/dd-opcua-lib/obj/
 inner/dd-opcua-win/dd-opcua-cli/obj/
 cache
+/outer/dd-nats-cache-unpack

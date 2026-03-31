@@ -120,6 +120,25 @@ func processDataPointHandler(topic string, responseTopic string, data []byte) er
 	return nil
 }
 
+// The ackumulated deadband in this filter process is dependent on periodic
+// collection of samples. This background task will periodically check all tags
+// and submit the last seen value with quality 68 for those that haven't been seen
+// in the last 10 secs. This function has been moved here from the sampler on the inside.
+func processPeriodSubmissionTask() {
+	timer := time.NewTimer(1 * time.Second)
+
+	for {
+		<-timer.C
+
+		for _, t := range datapoints {
+			if time.Since(t.LastTime) > time.Second*time.Duration(10) {
+				t.DataPoint.Quality = 68 // Uncertain [Last usable] tag.Quality;
+				svc.Publish("inner.process.actual", t.DataPoint)
+			}
+		}
+	}
+}
+
 func processMetaUpdate(topic string, responseTopic string, data []byte) error {
 	syncMetaWithTimescale()
 	return nil
