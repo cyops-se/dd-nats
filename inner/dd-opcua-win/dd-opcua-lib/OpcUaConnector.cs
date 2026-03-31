@@ -509,7 +509,23 @@ namespace dd_opcua_lib
                 // BrowseTagsRecursive(session, ObjectIds.ObjectsFolder, tags);
                 Console.WriteLine($"Browsing tags recursively beginning at ns=2;s=Path");
                 var nodeid = TryParseNodeId("ns=2;s=Path");
-                BrowseTagsRecursive(session, nodeid, tags);
+                Browser browser = null;
+                try
+                {
+                    browser = new Browser(session)
+                    {
+                        BrowseDirection = BrowseDirection.Forward,
+                        NodeClassMask = (int)NodeClass.Object | (int)NodeClass.Variable,
+                        ReferenceTypeId = ReferenceTypeIds.HierarchicalReferences,
+                        IncludeSubtypes = true
+                    };
+
+                    BrowseTagsRecursive(browser, nodeid, tags);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error while browsing tags recursively. Failed to create browser from session: {ex.Message}");
+                }
             }
             catch (Exception e)
             {
@@ -598,25 +614,10 @@ namespace dd_opcua_lib
         }
 
         Dictionary<string, TagInfo> _ledger = new Dictionary<string, TagInfo>();
-        private void BrowseTagsRecursive(Session session, NodeId nodeId, List<TagInfo> tags)
+        private void BrowseTagsRecursive(Browser browser, NodeId nodeId, List<TagInfo> tags)
         {
             if (tags.Count > 50) return;
-            if (session == null) return;
-            Browser browser = null;
-            try
-            {
-                browser = new Browser(session)
-                {
-                    BrowseDirection = BrowseDirection.Forward,
-                    NodeClassMask = (int)NodeClass.Object | (int)NodeClass.Variable,
-                    ReferenceTypeId = ReferenceTypeIds.HierarchicalReferences,
-                    IncludeSubtypes = true
-                };
-            }
-            catch (Exception ex) {
-                Console.WriteLine($"Error while browsing tags recursively. Failed to create browser from session: {ex.Message}");
-                return;
-            }
+            var session = (Opc.Ua.Client.Session)browser.Session;
 
             ReferenceDescriptionCollection refs = null;
             try { refs = browser.Browse(nodeId); } catch (Exception ex)
@@ -677,7 +678,7 @@ namespace dd_opcua_lib
 
                 if ((rd.NodeClass & NodeClass.Object) != 0)
                 {
-                    BrowseTagsRecursive(session, childId, tags);
+                    BrowseTagsRecursive(browser, childId, tags);
                 }
             }
         }

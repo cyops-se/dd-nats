@@ -34,8 +34,9 @@ func main() {
 
 func runEngine(svc *ddsvc.DdUsvc) {
 	port, _ := strconv.Atoi(svc.Get("port", "4359"))
-	if err := listenUDP(svc, port); err != nil {
-		svc.Error("Failed to connect", "Exiting application due to UDP connection failure, err: %s", err.Error())
+	bindip := svc.Get("bindip", "0.0.0.0")
+	if err := listenUDP(svc, bindip, port); err != nil {
+		svc.Error("Failed to listen", "Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
 	}
 
@@ -46,13 +47,19 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	go readActiveMsgs()
 }
 
-func listenUDP(svc *ddsvc.DdUsvc, port int) (err error) {
+func listenUDP(svc *ddsvc.DdUsvc, bindip string, port int) (err error) {
 	addr := net.UDPAddr{
 		Port: port,
-		IP:   net.ParseIP("0.0.0.0"),
+		IP:   net.ParseIP(bindip),
 	}
 
-	udpconn, err = net.ListenUDP("udp", &addr)
+	if bindip == "nil" {
+		svc.Trace("Outer proxy", "Listening to address (%s): nil:%d", bindip, port)
+		udpconn, err = net.ListenUDP("udp4", nil)
+	} else {
+		svc.Trace("Outer proxy", "Listening to address: '%s:%d'", bindip, port)
+		udpconn, err = net.ListenUDP("udp4", &addr)
+	}
 	return err
 }
 
@@ -68,11 +75,14 @@ func readUDP(svc *ddsvc.DdUsvc, prefix string) {
 	activemsgs = make(map[uint32]*msgInfo)
 
 	for {
-		_, _, err := udpconn.ReadFromUDP(packet)
+		svc.Trace("Outer proxy", "Waiting to receive packet")
+		_, from, err := udpconn.ReadFromUDP(packet)
 		if err != nil {
 			svc.Error("Failed to read UDP", "Failed to read data packet, err: %s", err.Error())
 			continue
 		}
+
+		svc.Trace("Outer proxy", "Message recevied from IP: '%s'", from.IP.String())
 
 		// read message id, packet no and total packets to determine if it is a new message or not
 		// and if we need to store it or not (single packets doesn't have to be kept)

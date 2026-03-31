@@ -1152,7 +1152,7 @@ namespace DdOpcUaLib
 
                         if (string.IsNullOrWhiteSpace(r.Name))
                         {
-                            LogEvent($"Empty tag name in group {r.GroupId}, row ignored.");
+                            LogEvent($"Empty tag name in group {r.GroupId}, row ignored. {r}");
                             continue;
                         }
 
