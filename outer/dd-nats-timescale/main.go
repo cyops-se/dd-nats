@@ -98,6 +98,10 @@ func processCacheHandler(topic string, responseTopic string, data []byte) error 
 }
 
 func processCache(fullname string, info os.FileInfo, err error) error {
+	if err != nil {
+		return err
+	}
+
 	if !info.IsDir() && path.Ext(info.Name()) == ".gz" {
 		svc.Info("cache unpack", "file: %s, info.Name(): %s", fullname, info.Name())
 		file, _ := os.OpenFile(fullname, os.O_RDONLY, 0644)
@@ -109,7 +113,7 @@ func processCache(fullname string, info os.FileInfo, err error) error {
 		content, err := io.ReadAll(gzr)
 		if err != nil {
 			svc.Error("failed to read .gz file: %s, %s ... continuing", fullname, err.Error())
-			return nil
+			return err
 		}
 
 		var datapoints types.DataPoints

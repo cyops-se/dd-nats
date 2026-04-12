@@ -162,7 +162,7 @@ func (emitter *TimescaleEmitter) appendPoint(id int, v *types.DataPoint) bool {
 
 func (emitter *TimescaleEmitter) insertBatch() error {
 	if emitter.count > 0 {
-		fmt.Fprintf(&emitter.builder, ";")
+		fmt.Fprintf(&emitter.builder, " on conflict do nothing;")
 		insert := emitter.builder.String()
 		_, err := TimescaleDBConn.Exec(context.Background(), insert)
 		if err != nil {
