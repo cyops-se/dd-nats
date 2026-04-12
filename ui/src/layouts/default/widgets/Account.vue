@@ -7,7 +7,7 @@
     origin="top right"
     transition="scale-transition"
   >
-    <template v-slot:activator="{ attrs, on }">
+    <template #activator="{ attrs, on }">
       <v-btn
         class="ml-2"
         min-width="0"

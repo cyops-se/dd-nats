@@ -13,9 +13,12 @@ namespace DdUsvc
     internal class DdUsvcMqttBroker : IMessageBroker
     {
         public string Url { get => _url; set => _url = Url; }
+        public bool AutoReconnect { get => _autoReconnect; set => _autoReconnect = value; }
         private MqttFactory _mqttFactory = null;
         private IMqttClient _client = null;
-        private string _url;
+        private string _url = "mqtt://localhost:1883";
+        private bool _autoReconnect = true;
+        private bool _isConnecting = false;
         private Dictionary<string, IMessageHandler> _subs = new Dictionary<string, IMessageHandler>();
 
         public DdUsvcMqttBroker(string url) {
@@ -29,7 +32,9 @@ namespace DdUsvc
 
         private Task client_DisconnectedAsync(MqttClientDisconnectedEventArgs arg)
         {
+            Console.WriteLine("Disconnect event received, killing client task");
             _client.ApplicationMessageReceivedAsync -= client_ApplicationMessageReceivedAsync;
+            if (!_isConnecting) Connect();
             return Task.CompletedTask;
         }
 
@@ -62,6 +67,7 @@ namespace DdUsvc
             {
                 try
                 {
+                    _isConnecting = true;
                     var uri = new Uri(_url);
                     var mqttClientOptions = new MqttClientOptionsBuilder().WithTcpServer(uri.Host).WithProtocolVersion(MqttProtocolVersion.V500).Build();
                     _client.ConnectAsync(mqttClientOptions, CancellationToken.None).Wait();
@@ -74,6 +80,7 @@ namespace DdUsvc
                 }
             }
 
+            _isConnecting = false;
             return new DdUsvcError();
         }
 

@@ -86,7 +86,7 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { sync } from 'vuex-pathify'
   import ApiService from '@/services/api.service'
 

@@ -6,7 +6,7 @@
     eager
     v-bind="$attrs"
   >
-    <template v-slot:activator>
+    <template #activator>
       <v-list-item-icon
         v-if="!item.icon && !item.avatar"
         class="text-caption text-uppercase text-center my-2 align-self-center"
@@ -41,7 +41,7 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { get } from 'vuex-pathify'
 
   export default {

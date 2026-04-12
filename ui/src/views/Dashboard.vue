@@ -6,7 +6,7 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { sync } from 'vuex-pathify'
   import InnerDashboard from './inner/Dashboard.vue'
   import OuterDashboard from './outer/Dashboard.vue'

@@ -84,7 +84,7 @@
 </template>
 
 <script>
-  // Mixins
+// Mixins
   import Proxyable from 'vuetify/lib/mixins/proxyable'
 
   // Vuex

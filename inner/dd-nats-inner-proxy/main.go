@@ -38,10 +38,12 @@ func runService(svc *ddsvc.DdUsvc) {
 		return
 	}
 
+	svc.Trace("Inner proxy", "Successfully connected to: %s:%d", host, port)
+
 	udpconn.SetWriteDeadline(time.Time{})
 
 	// Set up UDP sender
-	go sendUDP()
+	go sendUDP(svc)
 
 	topicstr := svc.Get("topics", "process.>,file.>,system.log.>,system.heartbeat")
 	topics := strings.Split(topicstr, ",")
@@ -56,7 +58,7 @@ func runService(svc *ddsvc.DdUsvc) {
 
 func connectUDP(host string, port int) (err error) {
 	target := fmt.Sprintf("%s:%d", host, port)
-	udpconn, err = net.Dial("udp", target)
+	udpconn, err = net.Dial("udp4", target)
 	return err
 }
 
@@ -72,7 +74,7 @@ func callbackHandler(topic string, responseTopic string, data []byte) error {
 // | msgid  | total  | total  | packet | subject| subject...        | payload| payload fragment... |
 // |        | size   | packets| no     | size   | (packetno = 0)    | size   |                     |
 
-func sendUDP() {
+func sendUDP(svc *ddsvc.DdUsvc) {
 	msgid := uint32(0)
 	packetlen := 1480
 	packet = make([]byte, packetlen)

@@ -18,7 +18,7 @@
 </template>
 
 <script>
-  // Components
+// Components
   import WebsocketService from '@/services/websocket.service'
 
   export default {

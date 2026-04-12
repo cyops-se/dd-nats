@@ -6,7 +6,7 @@
     style="cursor: pointer"
     @click:row="rowclick"
   >
-    <template v-slot:top>
+    <template #top>
       <v-toolbar
         flat
       >
@@ -22,7 +22,7 @@
         />
       </v-toolbar>
     </template>
-    <template v-slot:item.actions="{ item }">
+    <template #item.actions="{ item }">
       <router-link
         style="text-decoration: none; color: inherit;"
         :to="{name: 'inner/opcda/TagBrowser', params: {serverid: item.id}}"

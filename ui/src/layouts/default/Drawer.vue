@@ -42,7 +42,7 @@
             no-action
             color="grey"
           >
-            <template v-slot:activator>
+            <template #activator>
               <v-list-item-content>
                 <v-list-item-title v-text="link.text" />
               </v-list-item-content>
@@ -84,20 +84,20 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { get, sync } from 'vuex-pathify'
 
   export default {
     name: 'DefaultDrawer',
 
-    inject: ['theme'],
-
     components: {
       DefaultDrawerHeader: () => import(
-        /* webpackChunkName: "default-drawer-header" */
-        './widgets/DrawerHeader'
-      ),
+      /* webpackChunkName: "default-drawer-header" */
+      './widgets/DrawerHeader'
+    ),
     },
+
+    inject: ['theme'],
 
     props: {
       color: {
@@ -316,7 +316,7 @@
           text: 'Console settings',
         },
       ],
-      // services: {},
+    // services: {},
     }),
 
     computed: {

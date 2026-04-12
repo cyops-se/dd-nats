@@ -8,7 +8,7 @@
   >
     <template
       v-if="$vuetify.breakpoint.mdAndUp"
-      v-slot:append-outer
+      #append-outer
     >
       <v-btn
         class="mt-n2 ml-n2"

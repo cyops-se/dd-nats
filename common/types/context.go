@@ -9,4 +9,5 @@ type Context struct {
 	Url     string
 	Port    int
 	Id      string
+	BindIP  string
 }

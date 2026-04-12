@@ -5,7 +5,7 @@
       :items="items"
       class="elevation-1"
     >
-      <template v-slot:top>
+      <template #top>
         <v-toolbar
           flat
         >
@@ -20,7 +20,7 @@
             v-model="dialog"
             max-width="500px"
           >
-            <template v-slot:activator="{ on, attrs }">
+            <template #activator="{ on, attrs }">
               <v-btn
                 v-if="selected"
                 color="primary"
@@ -119,7 +119,7 @@
           />
         </v-toolbar>
       </template>
-      <template v-slot:item.actions="{ item }">
+      <template #item.actions="{ item }">
         <v-icon
           class="mr-2"
           @click="editItem(item)"
@@ -144,7 +144,7 @@
           mdi-stop
         </v-icon>
       </template>
-      <template v-slot:item.defaultgroup="{ item }">
+      <template #item.defaultgroup="{ item }">
         <div>{{ item.defaultgroup ? "Yes": "" }}</div>
       </template>
     </v-data-table>

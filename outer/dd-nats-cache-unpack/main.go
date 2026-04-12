@@ -5,6 +5,7 @@ import (
 	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -33,8 +34,13 @@ type CacheUnpackRequest struct {
 
 var request CacheUnpackRequest
 var counter int
+var topic string
 
 func main() {
+
+	flag.StringVar(&topic, "topic", "process.filtered", "specifies the topic to use when publishing to the message broker")
+	flag.Parse()
+
 	if svc := ddsvc.InitService("dd-nats-cache-unpack"); svc != nil {
 		svc.RunService(runEngine)
 	}
@@ -71,7 +77,7 @@ func processCache(fullname string, info os.FileInfo, err error) error {
 		var datapoints types.DataPoints
 		if err = json.Unmarshal(content, &datapoints); err == nil {
 			for _, dp := range datapoints {
-				ctx.svc.Publish("process.filtered", dp)
+				ctx.svc.Publish(topic, dp)
 
 				counter--
 				if counter <= 0 {

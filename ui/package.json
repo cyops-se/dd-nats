@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.14.3",
+    "@babel/eslint-parser": "^7.27.5",
     "@mdi/font": "^6.2.95",
     "@vue/cli-plugin-babel": "^4.5.13",
     "@vue/cli-plugin-eslint": "^4.5.13",
@@ -36,7 +37,6 @@
     "@vuetify/vue-cli-plugin-preset-base": "~0.3.2",
     "archiver": "^4.0.1",
     "babel-core": "7.0.0-bridge.0",
-    "babel-eslint": "^10.1.0",
     "dotenv": "^8.6.0",
     "eslint": "^6.8.0",
     "eslint-config-standard": "^14.1.1",

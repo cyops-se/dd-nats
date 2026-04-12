@@ -21,6 +21,7 @@ func runEngine(svc *ddsvc.DdUsvc) {
 	datapoints = make(map[string]*filteredPoint)
 	loadFilterMeta()
 	registerFilterRoutes()
+	go processPeriodSubmissionTask()
 
 	// Listen for incoming process data from the inside
 	topic := svc.Get("topic", "inner.process.actual")

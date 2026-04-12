@@ -1,0 +1,2 @@
+groupid;name;samplingtime;progid;default;runatstart
+1;1sec;1;opc.tcp://tb-dev:62550/Quickstarts/HistoricalAccessServer;0;1

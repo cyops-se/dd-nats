@@ -53,7 +53,7 @@
 </template>
 
 <script>
-  // Utilities
+// Utilities
   import { sync } from 'vuex-pathify'
 
   export default {
@@ -91,21 +91,21 @@
 
     methods: {
       refresh () {
-        // var request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
-        // ApiService.post('nats/request', request)
-        //   .then(response => {
-        //     this.groups = response.data.items
-        //   }).catch(response => {
-        //     console.log('ERROR response: ' + response.message)
-        //   })
+      // var request = { subject: 'usvc.opc.groups.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+      // ApiService.post('nats/request', request)
+      //   .then(response => {
+      //     this.groups = response.data.items
+      //   }).catch(response => {
+      //     console.log('ERROR response: ' + response.message)
+      //   })
 
-        // request = { subject: 'usvc.modbus.slaves.getall', payload: { value: parseInt(this.$route.params.serverid) } }
-        // ApiService.post('nats/request', request)
-        //   .then(response => {
-        //     this.slaves = response.data.items
-        //   }).catch(response => {
-        //     console.log('ERROR response: ' + response.message)
-        //   })
+      // request = { subject: 'usvc.modbus.slaves.getall', payload: { value: parseInt(this.$route.params.serverid) } }
+      // ApiService.post('nats/request', request)
+      //   .then(response => {
+      //     this.slaves = response.data.items
+      //   }).catch(response => {
+      //     console.log('ERROR response: ' + response.message)
+      //   })
       },
     },
   }
