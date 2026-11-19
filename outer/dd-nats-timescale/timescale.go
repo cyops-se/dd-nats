@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -300,7 +300,14 @@ func (emitter *TimescaleEmitter) connectdb() error {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	newpool, err := pgxpool.Connect(ctx, emitter.connectionString())
+	// pgxpool.New does not connect until the pool is used, ping to verify the
+	// connection directly (same behaviour as pgxpool.Connect in pgx v4)
+	newpool, err := pgxpool.New(ctx, emitter.connectionString())
+	if err == nil {
+		if err = newpool.Ping(ctx); err != nil {
+			newpool.Close()
+		}
+	}
 	if err != nil {
 		svc.Error("TimescaleDB emitter", "Failed to connect to the database %s:%d, err: %s", emitter.Host, emitter.Port, err.Error())
 		return err

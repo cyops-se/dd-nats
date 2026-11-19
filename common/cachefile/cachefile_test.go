@@ -85,3 +85,11 @@ func TestProcessDirectory(t *testing.T) {
 		t.Errorf("expected no files on second run, got %d", files)
 	}
 }
+
+func TestProcessDirectoryMissing(t *testing.T) {
+	errors := 0
+	files, points, err := ProcessDirectory(filepath.Join(t.TempDir(), "does-not-exist"), func(dp types.DataPoint) {}, func(string, error) { errors++ })
+	if err != nil || files != 0 || points != 0 || errors != 0 {
+		t.Fatalf("got files %d points %d errors %d err %v, expected nothing", files, points, errors, err)
+	}
+}

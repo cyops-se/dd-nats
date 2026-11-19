@@ -63,6 +63,11 @@ func ReadDataPoints(filename string, fn func(dp types.DataPoint)) (int, error) {
 // not processed. Errors for single files are reported through onError and
 // processing continues with the next file.
 func ProcessDirectory(root string, fn func(dp types.DataPoint), onError func(filename string, err error)) (files int, points int, err error) {
+	// Nothing to do if no cache directory has been created yet
+	if _, statErr := os.Stat(root); os.IsNotExist(statErr) {
+		return 0, 0, nil
+	}
+
 	skip := map[string]bool{
 		filepath.Join(root, DoneDir):      true,
 		filepath.Join(root, FailedDir):    true,
