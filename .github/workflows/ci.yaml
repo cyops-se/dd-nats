@@ -61,8 +61,6 @@ jobs:
   govulncheck:
     name: Go vulnerability check
     runs-on: ubuntu-latest
-    # Reports known vulnerabilities without blocking until the dependency upgrade (S8) is done
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
