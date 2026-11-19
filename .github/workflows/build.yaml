@@ -3,10 +3,16 @@ run-name: Build
 on:
   schedule:
     - cron: 0 4 * * *
+  workflow_dispatch:
 
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yaml
+
   build:
     name: Generate Build Artifacts
+    needs: ci
     strategy:
       fail-fast: true
       matrix:
@@ -19,13 +25,14 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: 'stable'
+          go-version-file: go.mod
       - name: Set-up Node environment
         uses: actions/setup-node@v4
         with:
-          node-version: '12.16'
+          # Vue CLI 4 / webpack 4 requires Node <= 16 (OpenSSL 3 incompatibility in later versions)
+          node-version: '16'
       - name: Build
         env:
           GOOS: ${{ matrix.os }}
