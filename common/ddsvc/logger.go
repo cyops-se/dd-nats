@@ -2,56 +2,39 @@ package ddsvc
 
 import (
 	"dd-nats/common/types"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 )
 
 func (svc *DdUsvc) Log(category string, title string, msg string) string {
-	entry := &types.Log{Time: time.Now().UTC(), Category: category, Title: title, Description: msg}
-	// if db.DB != nil {
-	// 	db.DB.Create(&entry)
-	// 	purge()
-	// }
+	entry := &types.Log{Time: time.Now().UTC(), Source: svc.Name, Category: category, Title: title, Description: msg}
 	text := fmt.Sprintf("%s: %s, %s", category, title, msg)
 	log.Println(text)
 
-	usvc.Publish("system.log."+category, entry)
+	svc.Publish("system.log."+category, entry)
 	return text
 }
 
+// Info logs an informational message. The returned error contains the logged text.
 func (svc *DdUsvc) Info(title string, format string, args ...interface{}) error {
 	msg := fmt.Sprintf(format, args...)
-	text := svc.Log("info", title, msg)
-	return fmt.Errorf(text)
+	return errors.New(svc.Log("info", title, msg))
 }
 
+// Trace logs a trace message if tracing is enabled, otherwise it does nothing and returns nil.
 func (svc *DdUsvc) Trace(title string, format string, args ...interface{}) error {
-	if !svc.Context.Trace {
+	if svc == nil || svc.Context == nil || !svc.Context.Trace {
 		return nil
 	}
 
 	msg := fmt.Sprintf(format, args...)
-	text := svc.Log("trace", title, msg)
-	return fmt.Errorf(text)
+	return errors.New(svc.Log("trace", title, msg))
 }
 
+// Error logs an error message. The returned error contains the logged text.
 func (svc *DdUsvc) Error(title string, format string, args ...interface{}) error {
 	msg := fmt.Sprintf(format, args...)
-	text := svc.Log("error", title, msg)
-	// NotifySubscribers("ddsvc.Error", fmt.Sprintf("%s: %s", title, msg))
-	return fmt.Errorf(text)
+	return errors.New(svc.Log("error", title, msg))
 }
-
-// func purge() {
-// 	var result int64
-// 	if db.DB != nil {
-// 		db.DB.Model(&types.Log{}).Count(&result)
-// 		for result > 1000 {
-// 			var first types.Log
-// 			db.DB.First(&first)
-// 			db.DB.Unscoped().Delete(&first)
-// 			result--
-// 		}
-// 	}
-// }

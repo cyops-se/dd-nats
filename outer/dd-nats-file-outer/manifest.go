@@ -1,52 +1,33 @@
 package main
 
 import (
-	"dd-nats/common/types"
+	"dd-nats/common/filetransfer"
 	"encoding/json"
-	"io/ioutil"
-	"path"
+	"os"
+	"path/filepath"
 	"time"
 )
 
-var Manifest *types.FileManifest
+var manifestBuilder = filetransfer.NewManifestBuilder()
 
 func createManifest(ctx *context) {
 	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 
-	for {
-		<-ticker.C
-		Manifest = new(types.FileManifest)
-		Manifest.LastUpdate = time.Now().UTC()
-		directoryManifest(ctx, "/", Manifest)
+	for range ticker.C {
+		manifest := manifestBuilder.Build(ctx.dir(ctx.donedir), func(err error) {
+			ctx.svc.Error("File manifest", "Error building manifest: %s", err.Error())
+		})
 
-		filename := path.Join(ctx.basedir, "manifest.json")
-		content, _ := json.Marshal(Manifest)
-		ioutil.WriteFile(filename, content, 0777)
-
-		if err := ctx.svc.Publish("file.manifest", Manifest); err != nil {
-			ctx.svc.Error("File manifest", "Failed to publish file manifest to NATS, err: %s", err.Error())
+		filename := filepath.Join(ctx.basedir, "manifest.json")
+		if content, err := json.Marshal(manifest); err == nil {
+			if err = os.WriteFile(filename, content, 0644); err != nil {
+				ctx.svc.Error("File manifest", "Failed to write manifest file %s, err: %s", filename, err.Error())
+			}
 		}
-	}
-}
 
-func directoryManifest(ctx *context, dirname string, manifest *types.FileManifest) {
-	readdir := path.Join(ctx.basedir, ctx.donedir, dirname)
-	infos, err := ioutil.ReadDir(readdir)
-	if err != nil {
-		ctx.svc.Error("file manifest", "error reading directory: %s, error: %s", readdir, err.Error())
-		return
-	}
-
-	for _, fi := range infos {
-		if !fi.IsDir() {
-			filename := path.Join(readdir, fi.Name())
-			hash := calcHash(filename)
-			hashvalue := hash.Sum(nil)
-
-			info := types.FileInfo{Name: fi.Name(), Path: dirname, Size: int(fi.Size()), Date: fi.ModTime(), Hash: hashvalue}
-			manifest.Files = append(manifest.Files, info)
-		} else {
-			directoryManifest(ctx, path.Join(dirname, fi.Name()), manifest)
+		if err := ctx.svc.Publish("file.manifest", manifest); err != nil {
+			ctx.svc.Error("File manifest", "Failed to publish file manifest, err: %s", err.Error())
 		}
 	}
 }

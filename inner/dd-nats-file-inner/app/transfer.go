@@ -3,14 +3,13 @@ package app
 import (
 	"crypto/sha256"
 	"dd-nats/common/ddsvc"
+	"dd-nats/common/filetransfer"
 	"dd-nats/common/types"
 	"fmt"
-	"hash"
 	"io"
-	"io/ioutil"
-	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 )
 
@@ -20,6 +19,9 @@ type context struct {
 	ProcessingDir string
 	DoneDir       string
 	FailDir       string
+	BlockSize     int
+	BlockDelay    time.Duration
+	StableTime    time.Duration
 	svc           *ddsvc.DdUsvc
 }
 
@@ -32,55 +34,90 @@ type progress struct {
 
 var ctx *context
 
+// Init creates the file transfer context and directories. Must be called before
+// routes are registered.
+func Init(svc *ddsvc.DdUsvc) {
+	ctx = initContext(svc)
+}
+
 func RunEngine(svc *ddsvc.DdUsvc) {
-	log.Println("Engine running ...")
+	svc.Info("File transfer", "Engine running ...")
+
+	if ctx == nil {
+		Init(svc)
+	}
 
 	// Watch folders for new data
-	ctx = initContext(svc)
 	go monitorFilesystem(ctx)
 	go createManifest(ctx)
+	go pruneDoneDirectory(ctx)
 }
 
 func Context() *context {
 	return ctx
 }
 
+func (c *context) Dir(name string) string {
+	return filepath.Join(c.BaseDir, name)
+}
+
 func monitorFilesystem(ctx *context) {
 	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-	for {
-		<-ticker.C
+	for range ticker.C {
 		processDirectory(ctx, ".")
 	}
 }
 
+// dirname is the path relative to the 'new' directory in forward slash format
 func processDirectory(ctx *context, dirname string) {
-	readdir := path.Join(ctx.BaseDir, ctx.NewDir, dirname)
-	processingdir := path.Join(ctx.BaseDir, ctx.ProcessingDir, dirname)
-	os.MkdirAll(processingdir, 0755)
+	readdir := filepath.Join(ctx.Dir(ctx.NewDir), filepath.FromSlash(dirname))
+	processingdir := filepath.Join(ctx.Dir(ctx.ProcessingDir), filepath.FromSlash(dirname))
 
-	infos, _ := ioutil.ReadDir(readdir)
-	for _, fi := range infos {
-		if !fi.IsDir() {
-			filename := path.Join(readdir, fi.Name())
-			movename := path.Join(processingdir, fi.Name())
-			if err := os.Rename(filename, movename); err == nil {
-				info := &types.FileInfo{Name: fi.Name(), Path: dirname, Size: int(fi.Size()), Date: fi.ModTime()}
-				ctx.svc.Event("filetransfer.request", info)
-				sendFile(ctx, info) // Do it sequentially to minimize packet loss
-			} else {
-				// log.Printf("Failed to move file to processing area: %s, error %s", filename, err.Error())
-			}
-		} else {
-			processDirectory(ctx, path.Join(dirname, fi.Name()))
+	entries, err := os.ReadDir(readdir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			processDirectory(ctx, path.Join(dirname, entry.Name()))
+			continue
 		}
+
+		fi, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		// Don't pick up files that are still being written
+		if time.Since(fi.ModTime()) < ctx.StableTime {
+			continue
+		}
+
+		if err := os.MkdirAll(processingdir, 0755); err != nil {
+			ctx.svc.Error("Filetransfer", "Failed to create directory: %s, error: %s", processingdir, err.Error())
+			return
+		}
+
+		filename := filepath.Join(readdir, fi.Name())
+		movename := filepath.Join(processingdir, fi.Name())
+		if err := os.Rename(filename, movename); err != nil {
+			// Most likely locked by another process that is still writing the file, try again later
+			continue
+		}
+
+		info := &types.FileInfo{Name: fi.Name(), Path: dirname, Size: int(fi.Size()), Date: fi.ModTime()}
+		ctx.svc.Event("filetransfer.request", info)
+		sendFile(ctx, info) // Do it sequentially to minimize packet loss
 	}
 }
 
 func sendFile(ctx *context, info *types.FileInfo) error {
 	dir := info.Path
 	name := info.Name
-	filename := path.Join(ctx.BaseDir, ctx.ProcessingDir, dir, name)
+	filename := filepath.Join(ctx.Dir(ctx.ProcessingDir), filepath.FromSlash(dir), name)
 
 	fi, err := os.Lstat(filename)
 	if err != nil {
@@ -95,96 +132,160 @@ func sendFile(ctx *context, info *types.FileInfo) error {
 
 	if fi.Size() == 0 {
 		ctx.svc.Error("Filetransfer", "'filename' is empty: %s", filename)
+		moveFile(ctx, filename, ctx.FailDir, dir, name)
 		return fmt.Errorf("empty file")
 	}
 
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	start := &types.FileTransferStart{Name: name, Path: dir, Size: info.Size, TransferStart: time.Now().UTC(), TransferId: id}
-	ctx.svc.Publish("file.start", start)
-
-	hash := calcHash(filename)
-	hashvalue := hash.Sum(nil)
-
 	file, err := os.Open(filename)
 	if err != nil {
-		ctx.svc.Error("Filetransfer", "Failed to open %s", filename)
+		ctx.svc.Error("Filetransfer", "Failed to open %s: %s", filename, err.Error())
+		moveFile(ctx, filename, ctx.FailDir, dir, name)
 		return err
 	}
 
-	// Always send blocks of 256KB bytes, regardless
-	content := make([]byte, 256*1024)
-	n := 0
+	size := fi.Size()
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	start := &types.FileTransferStart{Name: name, Path: dir, Size: int(size), FileTime: fi.ModTime(), TransferStart: time.Now().UTC(), TransferId: id}
+	ctx.svc.Publish("file.start", start)
+
+	content := make([]byte, ctx.BlockSize)
 	block := &types.FileTransferBlock{TransferId: id, BlockNo: 0, FileIndex: 0}
 	subject := fmt.Sprintf("file.block.%s", id)
 	errstr := ""
+	hasher := sha256.New() // calculated on the data actually sent
 
-	p := &progress{Name: filename, Size: uint64(info.Size), Index: block.FileIndex}
-	for err == nil {
-		// each message starts with a 4 byte sequence number, then 4 bytes of size of payload, then payload
-		n, err = file.Read(content)
+	p := &progress{Name: filename, Size: uint64(size), Index: 0}
+	var readerr error
+	for readerr == nil {
+		var n int
+		n, readerr = io.ReadFull(file, content)
+		if readerr == io.ErrUnexpectedEOF {
+			readerr = io.EOF
+		}
+
 		if n > 0 {
+			hasher.Write(content[:n])
 			block.Payload = content[:n]
 			block.Size = uint64(n)
 			block.FileIndex += block.Size
-			if err = ctx.svc.Publish(subject, block); err != nil {
+			if err := ctx.svc.Publish(subject, block); err != nil {
 				errstr = ctx.svc.Error("NATS error", "Failed to publish file block, err: %s", err.Error()).Error()
+				readerr = err
+				break
 			}
 
 			p.Index = block.FileIndex
 			p.Percent = (float64(p.Index) / float64(p.Size)) * 100.0
 			ctx.svc.Event("filetransfer.progress", p)
 			block.BlockNo++
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(ctx.BlockDelay)
 		}
 	}
 
 	file.Close()
-	end := types.FileTransferEnd{TransferId: id, TotalBlocks: block.BlockNo, TotalSize: block.FileIndex, Hash: hashvalue, Error: errstr}
-	ctx.svc.Publish("file.end", end)
 
-	todir := path.Join(ctx.BaseDir, ctx.DoneDir, dir)
-	if err != nil && err != io.EOF {
-		ctx.svc.Trace("File transfer failed", "Ended up with an error: %s", err.Error())
-		todir = path.Join(ctx.BaseDir, ctx.FailDir, dir)
+	if readerr != io.EOF && errstr == "" {
+		errstr = readerr.Error()
 	}
 
-	os.MkdirAll(todir, 0755)
+	end := types.FileTransferEnd{TransferId: id, TotalBlocks: block.BlockNo, TotalSize: block.FileIndex, Hash: hasher.Sum(nil), Error: errstr}
+	ctx.svc.Publish("file.end", end)
 
-	movename := path.Join(todir, name)
-	if err = os.Rename(filename, movename); err == nil {
-		ctx.svc.Trace("File transfer complete", "File %s, size %d transferred", filename, info.Size)
-	} else {
-		ctx.svc.Error("Failed to move file", "Error when attempting to move file after file was transferred, file %s, size %d, error %s", filename, info.Size, err.Error())
+	todir := ctx.DoneDir
+	if errstr != "" {
+		ctx.svc.Error("File transfer failed", "File %s ended up with an error: %s", filename, errstr)
+		todir = ctx.FailDir
+	}
+
+	err = moveFile(ctx, filename, todir, dir, name)
+	if err == nil {
+		ctx.svc.Trace("File transfer complete", "File %s, size %d transferred", filename, size)
 	}
 
 	ctx.svc.Event("filetransfer.complete", end)
-
-	time.Sleep(time.Millisecond)
-
 	return err
 }
 
-func calcHash(filename string) hash.Hash {
-	f, err := os.Open(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
+func moveFile(ctx *context, filename string, todir string, dir string, name string) error {
+	topath := filepath.Join(ctx.Dir(todir), filepath.FromSlash(dir))
+	if err := os.MkdirAll(topath, 0755); err != nil {
+		return ctx.svc.Error("Failed to move file", "Failed to create directory %s, error %s", topath, err.Error())
 	}
 
-	return h
+	movename := filepath.Join(topath, name)
+	if err := os.Rename(filename, movename); err != nil {
+		return ctx.svc.Error("Failed to move file", "Error when attempting to move file %s to %s, error %s", filename, movename, err.Error())
+	}
+
+	return nil
+}
+
+// Remove files from the done directory older than the configured retention
+// time (in days, 0 = keep forever)
+func pruneDoneDirectory(ctx *context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for {
+		days := ctx.svc.GetInt("done-retention-days", 0)
+		if days > 0 {
+			count, err := filetransfer.PruneOlderThan(ctx.Dir(ctx.DoneDir), time.Duration(days)*24*time.Hour)
+			if err != nil {
+				ctx.svc.Error("File transfer", "Failed to prune done directory: %s", err.Error())
+			} else if count > 0 {
+				ctx.svc.Info("File transfer", "%d file(s) older than %d days removed from done directory", count, days)
+			}
+		}
+
+		<-ticker.C
+	}
 }
 
 func initContext(svc *ddsvc.DdUsvc) *context {
 	wdir := svc.Context.Wdir
-	ctx := &context{BaseDir: path.Join(wdir, "outgoing"), NewDir: "new", ProcessingDir: "processing", DoneDir: "done", FailDir: "failed", svc: svc}
-	os.MkdirAll(path.Join(ctx.BaseDir, ctx.NewDir), 0755)
-	os.MkdirAll(path.Join(ctx.BaseDir, ctx.ProcessingDir), 0755)
-	os.MkdirAll(path.Join(ctx.BaseDir, ctx.DoneDir), 0755)
-	os.MkdirAll(path.Join(ctx.BaseDir, ctx.FailDir), 0755)
+	ctx := &context{
+		BaseDir:       filepath.Join(wdir, "outgoing"),
+		NewDir:        "new",
+		ProcessingDir: "processing",
+		DoneDir:       "done",
+		FailDir:       "failed",
+		BlockSize:     256 * 1024, // Always send blocks of 256KB bytes, regardless
+		BlockDelay:    time.Duration(svc.GetInt("block-delay-ms", 200)) * time.Millisecond,
+		StableTime:    time.Duration(svc.GetInt("stable-seconds", 2)) * time.Second,
+		svc:           svc,
+	}
+
+	for _, dir := range []string{ctx.NewDir, ctx.ProcessingDir, ctx.DoneDir, ctx.FailDir} {
+		if err := os.MkdirAll(ctx.Dir(dir), 0755); err != nil {
+			svc.Error("File transfer", "Failed to create directory %s: %s", ctx.Dir(dir), err.Error())
+		}
+	}
+
+	// Files left in processing from a previous run (e.g. crash) are retried
+	recoverProcessing(ctx)
+
 	return ctx
+}
+
+// Move files left in the processing directory back to new
+func recoverProcessing(ctx *context) {
+	root := ctx.Dir(ctx.ProcessingDir)
+	filepath.Walk(root, func(fullname string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return nil
+		}
+
+		rel, err := filepath.Rel(root, fullname)
+		if err != nil {
+			return nil
+		}
+
+		target := filepath.Join(ctx.Dir(ctx.NewDir), rel)
+		os.MkdirAll(filepath.Dir(target), 0755)
+		if err := os.Rename(fullname, target); err == nil {
+			ctx.svc.Info("File transfer", "Retrying file left in processing: %s", rel)
+		}
+
+		return nil
+	})
 }

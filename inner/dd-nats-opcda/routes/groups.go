@@ -81,7 +81,7 @@ func updateOpcGroups(topic string, responseTopic string, data []byte) error {
 					items.Items[i].DefaultGroup = false
 				}
 
-				if err := db.DB.Exec("update opc_group_items set 'default_group' = false").Error; err != nil {
+				if err := db.DB.Model(&app.OpcGroupItem{}).Where("1 = 1").Update("default_group", false).Error; err != nil {
 					usvc.Error("updateOpcGroups error", "failed to reset default group flag, error: %s", err.Error())
 				}
 				break
@@ -104,9 +104,9 @@ func deleteOpcGroups(topic string, responseTopic string, data []byte) error {
 	if err := json.Unmarshal(data, &items); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
-	} else {
-		for _, g := range items.Items {
-			app.StopGroup(&g)
+	} else if len(items.Items) > 0 {
+		for i := range items.Items {
+			app.StopGroup(&items.Items[i])
 		}
 
 		if err = db.DB.Delete(&items.Items).Error; err != nil {
@@ -120,8 +120,13 @@ func deleteOpcGroups(topic string, responseTopic string, data []byte) error {
 
 func deleteAllOpcGroups(topic string, responseTopic string, data []byte) error {
 	response := types.StatusResponse{Success: true}
-	var items []app.OpcTagItem
-	if err := db.DB.Delete(&items, "1 = 1").Error; err != nil {
+
+	groups, _ := app.GetGroups()
+	for _, g := range groups {
+		app.StopGroup(g)
+	}
+
+	if err := db.DB.Where("1 = 1").Delete(&app.OpcGroupItem{}).Error; err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	}
@@ -140,9 +145,7 @@ func startOpcGroup(topic string, responseTopic string, data []byte) error {
 	} else if group, err = app.GetGroup(uint(intmsg.Value)); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
-	}
-
-	if err := app.StartGroup(&group); err != nil {
+	} else if err := app.StartGroup(&group); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	}
@@ -160,9 +163,7 @@ func stopOpcGroup(topic string, responseTopic string, data []byte) error {
 	} else if group, err = app.GetGroup(uint(intmsg.Value)); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
-	}
-
-	if err := app.StopGroup(&group); err != nil {
+	} else if err := app.StopGroup(&group); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	}

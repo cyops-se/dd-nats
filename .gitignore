@@ -17,11 +17,16 @@ outgoing
 incoming
 *.db
 /svcs/dd-ui/web/static
-*.json
+# Runtime files written by the services (settings may contain credentials)
+*_settings.json
+*_settings.json.tmp
+manifest.json
+filterdata.json
+filterdata.json.tmp
+*.upload
 /inner/dd-nats-file-inner/dd-nats-file-inner
 /inner/dd-nats-inner-proxy/dd-nats-inner-proxy
 /outer/dd-nats-file-outer/dd-nats-file-outer
-/outer/dd-nats-legacy-proxy/dd-nats-legacy-proxy
 /outer/dd-nats-outer-proxy/dd-nats-outer-proxy
 /outer/dd-nats-process-filter/dd-nats-process-filter
 /outer/dd-nats-rabbitmq/dd-nats-rabbitmq
@@ -32,7 +37,6 @@ incoming
 /dist
 /inner/dd-nats-cache/dd-nats-cache
 /outer/dd-nats-influxdb/dd-nats-influxdb
-/tools/logflood/logflood
 /tools/sniffer/sniffer
 /inner/dd-opcda-win/*/bin/*
 /inner/dd-opcda-win/*/obj/*
@@ -51,4 +55,13 @@ inner/dd-opcua-win/dd-opcua-svc/obj/
 inner/dd-opcua-win/dd-opcua-lib/obj/
 inner/dd-opcua-win/dd-opcua-cli/obj/
 cache
-/outer/dd-nats-cache-unpack
+/outer/dd-nats-cache-unpack/dd-nats-cache-unpack
+/inner/dd-nats-modbus/dd-nats-modbus
+/inner/dd-nats-opcda/dd-nats-opcda
+
+# Go fuzz corpus generated locally
+testdata/fuzz/
+
+# IDE files
+.vs/
+.vscode/

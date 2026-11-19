@@ -1,137 +1,101 @@
 package main
 
 import (
-	"compress/gzip"
+	"dd-nats/common/cachefile"
 	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"sync"
 	"time"
 )
 
-var ctx *context
 var cacheMutex sync.Mutex
-var gzr *gzip.Reader
-
-type context struct {
-	basedir       string
-	processingdir string
-	donedir       string
-	faildir       string
-	svc           *ddsvc.DdUsvc
-}
+var svc *ddsvc.DdUsvc
+var cachedir string
 
 type CacheUnpackRequest struct {
 	ItemsPerSec int `json:"itemspersec"`
 }
 
-var request CacheUnpackRequest
-var counter int
 var topic string
 
 func main() {
-
 	flag.StringVar(&topic, "topic", "process.filtered", "specifies the topic to use when publishing to the message broker")
-	flag.Parse()
 
-	if svc := ddsvc.InitService("dd-nats-cache-unpack"); svc != nil {
+	if svc = ddsvc.InitService("dd-nats-cache-unpack"); svc != nil {
 		svc.RunService(runEngine)
 	}
 
 	log.Printf("Exiting ...")
 }
 
-func runEngine(svc *ddsvc.DdUsvc) {
-	log.Println("Engine running ...")
+func runEngine(s *ddsvc.DdUsvc) {
+	svc.Info("Cache unpack", "Engine running ...")
 
-	// Listen for incoming files
-	ctx = initContext(".", svc)
+	cachedir = filepath.Join(svc.Context.Wdir, "cache")
+	if err := os.MkdirAll(cachedir, 0755); err != nil {
+		svc.Error("Cache unpack", "Failed to create cache directory %s: %s", cachedir, err.Error())
+	}
+
 	svc.Subscribe("usvc.cache.unpack", cacheUnpackHandler)
 
-	request := &CacheUnpackRequest{ItemsPerSec: 5000}
-	svc.Request("usvc.cache.unpack", request)
+	// Process any files waiting in the cache directory at start up. Processed
+	// files are moved to cache/done (or cache/failed) so they are only processed once.
+	go unpack(CacheUnpackRequest{ItemsPerSec: svc.GetInt("itemspersec", 5000)})
 }
 
-func processCache(fullname string, info os.FileInfo, err error) error {
-	if !info.IsDir() && path.Ext(info.Name()) == ".gz" {
-		ctx.svc.Info("cache unpack", "file: %s, info.Name(): %s", fullname, info.Name())
-		file, _ := os.OpenFile(fullname, os.O_RDONLY, 0644)
-		defer file.Close()
-
-		gzr, _ := gzip.NewReader(file)
-		defer gzr.Close()
-
-		content, err := io.ReadAll(gzr)
-		if err != nil {
-			ctx.svc.Error("failed to read .gz file: %s, %s", fullname, err.Error())
-			return err
-		}
-
-		var datapoints types.DataPoints
-		if err = json.Unmarshal(content, &datapoints); err == nil {
-			for _, dp := range datapoints {
-				ctx.svc.Publish(topic, dp)
-
-				counter--
-				if counter <= 0 {
-					time.Sleep(time.Second)
-					counter = request.ItemsPerSec
-				}
-			}
-		} else {
-			ctx.svc.Error("failed to unmarshal content: %s", err.Error())
-		}
-	}
-
-	return nil
-}
-
-func cacheUnpackHandler(topic string, responseTopic string, data []byte) error {
-	response := types.StatusResponse{Success: true}
-
+func unpack(request CacheUnpackRequest) error {
 	// We can only handle one request at a time, which is a valid use case for TryLock()
 	if !cacheMutex.TryLock() {
-		err := fmt.Errorf("another request is already active, aborting this request")
-		response.Success = false
-		response.StatusMessage = err.Error()
-		ctx.svc.Publish(responseTopic, response)
-		return err
+		return fmt.Errorf("another request is already active, aborting this request")
 	}
-
 	defer cacheMutex.Unlock()
 
+	counter := request.ItemsPerSec
+	files, points, err := cachefile.ProcessDirectory(cachedir, func(dp types.DataPoint) {
+		svc.Publish(topic, dp)
+
+		if request.ItemsPerSec > 0 {
+			counter--
+			if counter <= 0 {
+				time.Sleep(time.Second)
+				counter = request.ItemsPerSec
+			}
+		}
+	}, func(filename string, err error) {
+		svc.Error("Cache unpack", "Failed to process file %s: %s", filename, err.Error())
+	})
+
+	if files > 0 {
+		svc.Info("Cache unpack", "Processed %d file(s), %d data point(s)", files, points)
+	}
+
+	return err
+}
+
+func cacheUnpackHandler(subject string, responseTopic string, data []byte) error {
+	response := types.StatusResponse{Success: true}
+
+	var request CacheUnpackRequest
 	if err := json.Unmarshal(data, &request); err != nil {
 		response.Success = false
 		response.StatusMessage = err.Error()
-		ctx.svc.Publish(responseTopic, response)
-		return err
+		return svc.Publish(responseTopic, response)
 	}
 
-	counter = request.ItemsPerSec
-	if err := filepath.Walk(ctx.basedir, processCache); err != nil {
-		ctx.svc.Error("Cache", "Filewalk error: %s", err.Error())
-		response.Success = false
-		response.StatusMessage = err.Error()
-		ctx.svc.Publish(responseTopic, response)
-		return err
-	} else {
-		ctx.svc.Publish(responseTopic, response)
-	}
+	// Respond immediately and process in the background, processing a big
+	// cache takes much longer than any request timeout
+	go func() {
+		if err := unpack(request); err != nil {
+			svc.Error("Cache unpack", "Unpack request failed: %s", err.Error())
+		}
+	}()
 
-	return nil
-}
-
-func initContext(wdir string, svc *ddsvc.DdUsvc) *context {
-	ctx := &context{basedir: path.Join(wdir, "cache"), processingdir: "processing", donedir: "done", faildir: "failed", svc: svc}
-	os.MkdirAll(path.Join(ctx.basedir, ctx.processingdir), 0755)
-	os.MkdirAll(path.Join(ctx.basedir, ctx.donedir), 0755)
-	os.MkdirAll(path.Join(ctx.basedir, ctx.faildir), 0755)
-	return ctx
+	response.StatusMessage = "cache unpack started"
+	return svc.Publish(responseTopic, response)
 }

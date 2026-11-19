@@ -2,61 +2,100 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"log"
-	"strings"
-	"time"
-
 	"dd-nats/common/types"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
+const (
+	maxPendingPoints  = 100000 // max number of points buffered while the database is unavailable
+	maxRowsPerInsert  = 1000   // 4 parameters per row, well below the PostgreSQL limit of 65535
+	flushInterval     = time.Second
+	reconnectInterval = 5 * time.Second
+	dbTimeout         = 30 * time.Second
+)
+
 type TimescaleEmitter struct {
-	Host      string               `json:"host"`
-	Port      int                  `json:"port"`
-	User      string               `json:"user"`
-	Password  string               `json:"password"`
-	Authident bool                 `json:"authident"`
-	Database  string               `json:"database"`
-	Batchsize int                  `json:"batchsize"`
-	err       error                `json:"-" gorm:"-"`
-	messages  chan types.DataPoint `json:"-" gorm:"-"`
-	builder   strings.Builder      `json:"-" gorm:"-"`
-	count     uint64               `json:"-" gorm:"-"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	User      string `json:"user"`
+	Password  string `json:"password"`
+	Database  string `json:"database"`
+	SSLMode   string `json:"sslmode"`
+	Batchsize int    `json:"batchsize"`
+
+	messages    chan types.DataPoint
+	stop        chan chan struct{}
+	pending     []types.DataPoint
+	lastConnect time.Time
+	dropped     uint64
+
+	idsLock sync.Mutex
+	ids     map[string]int
 }
 
-var debug *bool
-var batchSize *int
+var pool atomic.Pointer[pgxpool.Pool]
 
-var TimescaleDBConn *pgxpool.Pool
-var ids map[string]int
+// TimescaleDBConn returns the current connection pool, or nil if not connected
+func TimescaleDBConn() *pgxpool.Pool {
+	return pool.Load()
+}
 
 func (emitter *TimescaleEmitter) InitEmitter() error {
+	if emitter.Batchsize < 1 {
+		emitter.Batchsize = 1
+	}
+
+	if emitter.SSLMode == "" {
+		emitter.SSLMode = "disable"
+	}
+
+	emitter.ids = make(map[string]int)
+	emitter.messages = make(chan types.DataPoint, 2000)
+	emitter.stop = make(chan chan struct{})
 	emitter.connectdb()
 
-	ids = make(map[string]int)
-	emitter.initBatch()
-
-	emitter.messages = make(chan types.DataPoint, 2000)
 	go emitter.processMessages()
-	// go emitter.syncMeta()
-
 	return nil
+}
+
+// Stop flushes pending data points and stops the emitter
+func (emitter *TimescaleEmitter) Stop() {
+	done := make(chan struct{})
+	select {
+	case emitter.stop <- done:
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+		}
+	case <-time.After(time.Second):
+	}
+
+	if p := pool.Swap(nil); p != nil {
+		p.Close()
+	}
 }
 
 func (emitter *TimescaleEmitter) ProcessDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(data, &dp); err == nil {
-		emitter.ProcessMessage(dp)
-	} else {
-		svc.Error("Timescale server", "Failed to unmarshal process data: %s", err.Error())
+	if err := json.Unmarshal(data, &dp); err != nil {
+		return fmt.Errorf("failed to unmarshal process data: %s", err.Error())
 	}
 
+	emitter.ProcessMessage(dp)
 	return nil
 }
 
@@ -66,127 +105,226 @@ func (emitter *TimescaleEmitter) ProcessMessage(dp types.DataPoint) {
 	}
 }
 
+// InvalidateIds clears the tag id cache, must be called when tags are removed
+func (emitter *TimescaleEmitter) InvalidateIds() {
+	emitter.idsLock.Lock()
+	emitter.ids = make(map[string]int)
+	emitter.idsLock.Unlock()
+}
+
 func (emitter *TimescaleEmitter) processMessages() {
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
 
 	for {
-		dp := <-emitter.messages
-
-		if TimescaleDBConn == nil {
-			if emitter.connectdb() != nil {
+		select {
+		case dp := <-emitter.messages:
+			if math.IsNaN(dp.Value) || math.IsInf(dp.Value, 0) {
+				svc.Trace("TimescaleDB emitter", "Skipping non-finite value for %s", dp.Name)
 				continue
 			}
-		}
 
-		var err error
-
-		// use 'ids' as a local datapoint name cache to resolve id
-		// if not in the cache, get it from the database
-		// if not in the database, insert a new meta item and get the new id
-		id, ok := ids[dp.Name]
-		if !ok {
-			if err = TimescaleDBConn.QueryRow(context.Background(), "select tag_id from measurements.tags where name=$1", dp.Name).Scan(&id); err != nil {
-				log.Printf("TIMESCALEDB couldn't find %s in database, error: %s, type: %T, err value: %#v", dp.Name, err.Error(), err, err)
-				if err == pgx.ErrNoRows {
-					err = TimescaleDBConn.QueryRow(context.Background(), "insert into measurements.tags (name) values ($1) returning tag_id", dp.Name).Scan(&id)
-				}
+			emitter.pending = append(emitter.pending, dp)
+			if len(emitter.pending) >= emitter.Batchsize {
+				emitter.flush()
 			}
-			ids[dp.Name] = id
-		}
 
-		if err == nil {
-			if emitter.appendPoint(id, &dp) {
-				emitter.insertBatch()
-				emitter.initBatch()
+		case <-ticker.C:
+			if len(emitter.pending) > 0 {
+				emitter.flush()
 			}
-		} else {
-			log.Println("TIMESCALEDB insert process data failed, err:", err.Error())
+
+		case done := <-emitter.stop:
+			if len(emitter.pending) > 0 {
+				emitter.flush()
+			}
+			close(done)
+			return
 		}
 	}
 }
 
-// func (emitter *TimescaleEmitter) ProcessMeta(dp *types.DataPointMeta) {
-// 	var id int
-// 	if emitter.rowExists("select name from measurements.tags where name=$1", dp.Name) == false {
-// 		if err := TimescaleDBConn.QueryRow(context.Background(), "insert into measurements.tags (name, description) values ($1, $2) returning tag_id", dp.Name, dp.Description).Scan(&id); err != nil {
-// 			fmt.Println("TIMESCALE failed to insert,", err.Error())
-// 		}
-// 	} else {
-// 		if _, err := TimescaleDBConn.Exec(context.Background(), "update measurements.tags set description = $2 where name = $1", dp.Name, dp.Description); err != nil {
-// 			fmt.Println("TIMESCALE failed to update,", err.Error())
-// 		}
-// 	}
-// }
+// isConnectionError returns true for errors where the insert should be retried
+// later (connection lost, server shutting down, ...) as opposed to errors
+// caused by the data itself
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var pgerr *pgconn.PgError
+	if errors.As(err, &pgerr) {
+		return strings.HasPrefix(pgerr.Code, "08") || strings.HasPrefix(pgerr.Code, "57P")
+	}
+
+	// Anything else (network errors, timeouts, closed pool) is considered a connection problem
+	return true
+}
+
+func (emitter *TimescaleEmitter) handleConnectionError(err error) {
+	svc.Error("TimescaleDB emitter", "Database connection error, %d point(s) kept for retry: %s", len(emitter.pending), err.Error())
+	if p := pool.Swap(nil); p != nil {
+		p.Close()
+	}
+}
+
+func (emitter *TimescaleEmitter) trimPending() {
+	if excess := len(emitter.pending) - maxPendingPoints; excess > 0 {
+		emitter.pending = append([]types.DataPoint(nil), emitter.pending[excess:]...)
+		emitter.dropped += uint64(excess)
+		svc.Error("TimescaleDB emitter", "Buffer full, %d oldest point(s) dropped (%d in total)", excess, emitter.dropped)
+	}
+}
+
+func (emitter *TimescaleEmitter) flush() {
+	defer emitter.trimPending()
+
+	conn := TimescaleDBConn()
+	if conn == nil {
+		if time.Since(emitter.lastConnect) < reconnectInterval || emitter.connectdb() != nil {
+			return
+		}
+		conn = TimescaleDBConn()
+	}
+
+	// Resolve tag ids, keep only points with a valid id
+	rows := make([][]interface{}, 0, len(emitter.pending))
+	for _, dp := range emitter.pending {
+		id, err := emitter.resolveId(conn, dp.Name)
+		if err != nil {
+			if isConnectionError(err) {
+				emitter.handleConnectionError(err)
+				return
+			}
+
+			svc.Error("TimescaleDB emitter", "Failed to resolve tag id for %s, point dropped: %s", dp.Name, err.Error())
+			continue
+		}
+
+		rows = append(rows, []interface{}{id, dp.Time, dp.Value, dp.Quality})
+	}
+
+	for len(rows) > 0 {
+		n := len(rows)
+		if n > maxRowsPerInsert {
+			n = maxRowsPerInsert
+		}
+
+		if err := insertRows(conn, rows[:n]); err != nil {
+			if isConnectionError(err) {
+				// Keep all pending points for retry, rows that were already
+				// inserted are ignored by 'on conflict do nothing'
+				emitter.handleConnectionError(err)
+				return
+			}
+
+			svc.Error("TimescaleDB emitter", "Failed to insert %d point(s), dropped: %s", n, err.Error())
+		}
+
+		rows = rows[n:]
+	}
+
+	emitter.pending = emitter.pending[:0]
+}
+
+func insertRows(conn *pgxpool.Pool, rows [][]interface{}) error {
+	var sb strings.Builder
+	sb.WriteString("insert into measurements.raw_measurements (tag, time, value, quality) values ")
+
+	args := make([]interface{}, 0, len(rows)*4)
+	for i, row := range rows {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		n := i * 4
+		fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d)", n+1, n+2, n+3, n+4)
+		args = append(args, row...)
+	}
+	sb.WriteString(" on conflict do nothing")
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	_, err := conn.Exec(ctx, sb.String(), args...)
+	return err
+}
+
+// resolveId uses 'ids' as a local datapoint name cache to resolve id. If not
+// in the cache, get it from the database. If not in the database, insert a new
+// meta item and get the new id. Only successfully resolved ids are cached.
+func (emitter *TimescaleEmitter) resolveId(conn *pgxpool.Pool, name string) (int, error) {
+	emitter.idsLock.Lock()
+	id, ok := emitter.ids[name]
+	emitter.idsLock.Unlock()
+
+	if ok {
+		return id, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	err := conn.QueryRow(ctx, "select tag_id from measurements.tags where name=$1", name).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = conn.QueryRow(ctx, "insert into measurements.tags (name) values ($1) returning tag_id", name).Scan(&id)
+	}
+
+	if err != nil {
+		return 0, err
+	}
+
+	emitter.idsLock.Lock()
+	emitter.ids[name] = id
+	emitter.idsLock.Unlock()
+
+	return id, nil
+}
+
+func (emitter *TimescaleEmitter) connectionString() string {
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(emitter.User, emitter.Password),
+		Host:   net.JoinHostPort(emitter.Host, strconv.Itoa(emitter.Port)),
+		Path:   "/" + emitter.Database,
+	}
+
+	q := url.Values{}
+	q.Set("sslmode", emitter.SSLMode)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
 
 func (emitter *TimescaleEmitter) connectdb() error {
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		emitter.Host, emitter.Port, emitter.User, emitter.Password, emitter.Database)
-	// dburl := fmt.Sprintf("postgres://%s:%s@%s:5432/%s", emitter.User, emitter.Password, emitter.Host, emitter.Database)
-	TimescaleDBConn, emitter.err = pgxpool.Connect(context.Background(), psqlInfo)
-	if emitter.err != nil {
-		svc.Error("TimescaleDB emitter", fmt.Sprintf("Failed to connect to the database, err: %s", emitter.err.Error()))
-		return emitter.err
+	emitter.lastConnect = time.Now()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	newpool, err := pgxpool.Connect(ctx, emitter.connectionString())
+	if err != nil {
+		svc.Error("TimescaleDB emitter", "Failed to connect to the database %s:%d, err: %s", emitter.Host, emitter.Port, err.Error())
+		return err
 	}
 
-	svc.Info("TimescaleDB emitter", fmt.Sprintf("Database server connected: %s", emitter.Host))
-	return emitter.err
+	if old := pool.Swap(newpool); old != nil {
+		old.Close()
+	}
+
+	svc.Info("TimescaleDB emitter", "Database server connected: %s", emitter.Host)
+	return nil
 }
 
-func (emitter *TimescaleEmitter) rowExists(query string, args ...interface{}) bool {
+func rowExists(query string, args ...interface{}) (bool, error) {
+	conn := TimescaleDBConn()
+	if conn == nil {
+		return false, fmt.Errorf("no Timescale database connection available")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
 	var exists bool
 	query = fmt.Sprintf("SELECT exists (%s)", query)
-	err := TimescaleDBConn.QueryRow(context.Background(), query, args...).Scan(&exists)
-	if err != nil && err != sql.ErrNoRows {
-		log.Fatalf("error checking if row exists '%s' %v", args, err)
-	}
-	return exists
-}
-
-func (emitter *TimescaleEmitter) initBatch() {
-	emitter.count = 0
-	emitter.builder.Reset()
-	emitter.builder.Grow(4096)
-
-	fmt.Fprintf(&emitter.builder, "insert into measurements.raw_measurements (tag, time, value, quality) values ")
-}
-
-func (emitter *TimescaleEmitter) appendPoint(id int, v *types.DataPoint) bool {
-	if emitter.count > 0 {
-		fmt.Fprintf(&emitter.builder, ",")
-	}
-
-	fmt.Fprintf(&emitter.builder, "(%d, '%s', %v, %d)", id, v.Time.Format(time.RFC3339Nano), v.Value, v.Quality)
-	emitter.count++
-
-	return emitter.count > uint64(emitter.Batchsize)
-}
-
-func (emitter *TimescaleEmitter) insertBatch() error {
-	if emitter.count > 0 {
-		fmt.Fprintf(&emitter.builder, " on conflict do nothing;")
-		insert := emitter.builder.String()
-		_, err := TimescaleDBConn.Exec(context.Background(), insert)
-		if err != nil {
-			switch err := err.(type) {
-			default:
-				svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert (default): %#v", err))
-				// log.Println(insert)
-				emitter.initBatch()
-				return err
-			case *pgconn.PgError:
-				if err.Code == "57P01" {
-					return emitter.connectdb()
-				}
-
-				if err.Code != "23505" {
-					svc.Error("TimescaleDB emitter", fmt.Sprintf("failed to insert (PgError): %#v", err))
-				}
-
-				// log.Println(insert)
-				emitter.initBatch()
-				return err
-			}
-		}
-	}
-
-	return nil
+	err := conn.QueryRow(ctx, query, args...).Scan(&exists)
+	return exists, err
 }

@@ -55,10 +55,20 @@ namespace DdUsvc
             IMessageHandler handler = null;
             if (_subs.TryGetValue(e.ApplicationMessage.Topic, out handler))
             {
-                handler(e.ApplicationMessage.Topic, e.ApplicationMessage.ResponseTopic, e.ApplicationMessage.PayloadSegment.Array);
+                handler(e.ApplicationMessage.Topic, e.ApplicationMessage.ResponseTopic, ToBytes(e.ApplicationMessage.PayloadSegment));
             }
 
             return Task.CompletedTask;
+        }
+
+        // PayloadSegment.Array is the whole underlying buffer, which may be larger
+        // than the payload, only copy the part that belongs to the message
+        private static byte[] ToBytes(ArraySegment<byte> segment)
+        {
+            var bytes = new byte[segment.Count];
+            if (segment.Array != null && segment.Count > 0)
+                Buffer.BlockCopy(segment.Array, segment.Offset, bytes, 0, segment.Count);
+            return bytes;
         }
 
         public DdUsvcError Connect()

@@ -32,17 +32,15 @@ func registerOpcRoutes() {
 }
 
 func getAllOpcServers(topic string, responseTopic string, data []byte) error {
-	if servers == nil {
-		initServers()
-	}
+	initServers()
 
+	mutex.Lock()
+	defer mutex.Unlock()
 	return usvc.Publish(responseTopic, servers)
 }
 
 func getOpcServerRoot(topic string, responseTopic string, data []byte) error {
-	if servers == nil {
-		initServers()
-	}
+	initServers()
 
 	sid, err := getServerId(data)
 	if err != nil {
@@ -52,8 +50,8 @@ func getOpcServerRoot(topic string, responseTopic string, data []byte) error {
 	}
 
 	browser, err := getBrowser(sid)
-	if err != nil {
-		usvc.Error("OPC DA", "Failed to get server browser: %s", err.Error())
+	if err != nil || browser == nil {
+		usvc.Error("OPC DA", "Failed to get server browser: %v", err)
 		response := &types.PlainMessage{Message: "Failed to get server browser"}
 		return usvc.Publish(responseTopic, response)
 	}
@@ -84,6 +82,11 @@ func getOpcServerBranch(topic string, responseTopic string, data []byte) error {
 	}
 
 	browser, err := getBrowser(msg.ServerId)
+	if err != nil || browser == nil {
+		response := &types.PlainMessage{Message: "Failed to get server browser"}
+		return usvc.Publish(responseTopic, response)
+	}
+
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -101,10 +104,16 @@ func getOpcServerBranch(topic string, responseTopic string, data []byte) error {
 
 // Helper methods
 
+// Enumerates the OPC DA servers once
 func initServers() {
 	mutex.Lock()
 	defer mutex.Unlock()
 
+	if servers != nil {
+		return
+	}
+
+	servers = []*Server{}
 	usvc.Info("OPC DA", "Enumerating OPC DA servers")
 	// Test if we can connect Graybox.Simulator since we can't browse it
 	i := 0
@@ -143,6 +152,9 @@ func getServerId(data []byte) (int, error) {
 }
 
 func getServer(sid int) (*Server, error) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	if sid < 0 || sid >= len(servers) {
 		return nil, fmt.Errorf("no such server id: %d", sid)
 	}
@@ -153,7 +165,7 @@ func getServer(sid int) (*Server, error) {
 func getBrowser(sid int) (*ole.VARIANT, error) {
 	server, err := getServer(sid)
 	if err != nil {
-		usvc.Error("Servers engine", "Failed to get server '%s', error: %s", sid, err)
+		usvc.Error("Servers engine", "Failed to get server '%d', error: %s", sid, err)
 		return nil, err
 	}
 

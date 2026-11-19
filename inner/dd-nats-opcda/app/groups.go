@@ -14,13 +14,22 @@ import (
 
 var usvc *ddsvc.DdUsvc
 var opcmutex sync.Mutex // Issue #3, no time to find out where thread insafety is (looks like it's in or below oleutil)
-var failedtags []*OpcTagItem
-var lastcheck time.Time
+
+// running keeps track of the groups with an active collector to prevent a
+// group from being started more than once
+var running = make(map[uint]bool)
+var runningLock sync.Mutex
 
 func read(client *opc.Connection) map[string]opc.Item {
 	opcmutex.Lock()
 	defer opcmutex.Unlock()
 	return (*client).Read()
+}
+
+func addTag(client *opc.Connection, name string) error {
+	opcmutex.Lock()
+	defer opcmutex.Unlock()
+	return (*client).AddSingle(name)
 }
 
 func asFloat64(v interface{}) float64 {
@@ -64,102 +73,120 @@ func asFloat64(v interface{}) float64 {
 	return invalidvalue
 }
 
-func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
-	timer := time.NewTicker(time.Duration(group.Interval) * time.Second)
+func setRunning(id uint, value bool) bool {
+	runningLock.Lock()
+	defer runningLock.Unlock()
 
+	if value && running[id] {
+		return false
+	}
+
+	if value {
+		running[id] = true
+	} else {
+		delete(running, id)
+	}
+
+	return true
+}
+
+func setGroupState(group *OpcGroupItem, state int) {
+	group.State = state
+	if err := db.DB.Model(group).Update("state", state).Error; err != nil {
+		usvc.Error("OPC group", "Failed to update state of group %s: %s", group.Name, err.Error())
+	}
+}
+
+func groupDataCollector(group *OpcGroupItem, tags []*OpcTagItem) {
+	defer setRunning(group.ID, false)
+
+	interval := group.Interval
+	if interval < 1 {
+		interval = 1
+	}
+
+	timer := time.NewTicker(time.Duration(interval) * time.Second)
+	defer timer.Stop()
+
+	opcmutex.Lock()
 	client, err := opc.NewConnectionWithoutTags(group.ProgID, // ProgId
 		[]string{"localhost"}, //  OPC servers nodes
 	)
+	opcmutex.Unlock()
 
 	if err != nil {
-		usvc.Log("error", "Failed to connect OPC DA server", fmt.Sprintf("Group: %s, progid: %s, err: %s", group.Name, group.ProgID, err.Error()))
+		usvc.Error("Failed to connect OPC DA server", "Group: %s, progid: %s, err: %s", group.Name, group.ProgID, err.Error())
+		setGroupState(group, GroupStateStopped)
 		usvc.Event("group.failed", group)
 		return
 	}
 
-	defer client.Close()
+	defer func() {
+		opcmutex.Lock()
+		client.Close()
+		opcmutex.Unlock()
+	}()
 
-	// Adding items
+	// Adding items, the failed ones are retried every minute
+	var failedtags []*OpcTagItem
+	lastcheck := time.Now()
 	for _, tag := range tags {
-		if err := client.AddSingle(tag.Name); err != nil {
+		if err := addTag(&client, tag.Name); err != nil {
 			usvc.Log("warning", "Unable to collect tag", fmt.Sprintf("%s, group: %s, progid: %s", tag.Name, group.Name, group.ProgID))
 			failedtags = append(failedtags, tag)
-			lastcheck = time.Now()
 		}
 	}
 
 	if len(client.Tags()) == 0 {
-		usvc.Log("error", "No tags to collect", fmt.Sprintf("Group: %s, progid: %s", group.Name, group.ProgID))
-		usvc.Info("OPC group warning", "Group %s WARNING: no tags added successfully", group.Name)
+		usvc.Error("No tags to collect", "Group %s WARNING: no tags added successfully, progid: %s", group.Name, group.ProgID)
 	}
 
 	// Initiate group running state
-	if len(client.Tags()) != len(tags) {
-		group.State = GroupStateRunningWithWarning
+	if len(failedtags) > 0 {
+		setGroupState(group, GroupStateRunningWithWarning)
 		usvc.Info("OPC group warning", "Group %s WARNING", group.Name)
 		usvc.Event(fmt.Sprintf("group.%d.warning", group.ID), group)
 	} else {
-		group.State = GroupStateRunning
+		setGroupState(group, GroupStateRunning)
 		usvc.Info("OPC group started", "Group %s STARTED", group.Name)
 		usvc.Event(fmt.Sprintf("group.%d.started", group.ID), group)
 	}
 
-	usvc.Log("trace", "Collecting tags", fmt.Sprintf("%d tags from group: %s", len(client.Tags()), group.Name))
-
-	// items := read(&client) // This is only to get the number of items
-	msg := &types.DataPointSample{Version: 3, Group: group.Name}
-	msg.Points = make([]types.DataPoint, 10)
+	usvc.Trace("Collecting tags", "%d tags from group: %s", len(client.Tags()), group.Name)
 
 	group.Counter = 0
-	db.DB.Save(group)
-
-	var i, b int // golang always initialize to 0
 	for {
-		if g, e := GetGroup(group.ID); e == nil && g.State == GroupStateStopped {
+		if g, e := GetGroup(group.ID); e != nil || g.State == GroupStateStopped {
 			usvc.Info("OPC group stopped", "Group %s STOPPED", group.Name)
 			usvc.Event(fmt.Sprintf("group.%d.stopped", group.ID), g)
 			break
 		}
 
 		items := read(&client)
-
 		for k, v := range items {
-			msg.Points[b].Time = v.Timestamp
-			msg.Points[b].Name = k
-			msg.Points[b].Value = asFloat64(v.Value)
-			msg.Points[b].Quality = int(v.Quality)
-
-			usvc.Publish("process.actual", msg.Points[b])
-
-			// Send batch when msg.Points is full (keep it small to avoid fragmentation)
-			if b == len(msg.Points)-1 {
-				b = 0
-				msg.Sequence++
-			} else {
-				b++
-			}
-			i++
+			dp := types.DataPoint{Time: v.Timestamp, Name: k, Value: asFloat64(v.Value), Quality: int(v.Quality)}
+			usvc.Publish("process.actual", dp)
 		}
 
 		group.LastRun = time.Now()
 		group.Counter = group.Counter + uint64(len(items))
-
-		// db.DB.Model(&group).Updates(OpcGroupItem{LastRun: group.LastRun, Counter: group.Counter})
 		usvc.Event(fmt.Sprintf("group.%d.updated", group.ID), group)
 
 		<-timer.C
 
 		// Try to add failed items every minute
-		if len(failedtags) > 0 && group.LastRun.Sub(lastcheck) > time.Minute {
-			for ti, tag := range failedtags {
-				if err := client.AddSingle(tag.Name); err == nil {
-					failedtags = append(failedtags[:ti], failedtags[ti+1:]...)
+		if len(failedtags) > 0 && time.Since(lastcheck) > time.Minute {
+			stillfailing := failedtags[:0]
+			for _, tag := range failedtags {
+				if err := addTag(&client, tag.Name); err != nil {
+					stillfailing = append(stillfailing, tag)
 				}
 			}
-
+			failedtags = stillfailing
 			lastcheck = time.Now()
+
 			if len(failedtags) == 0 {
-				group.State = GroupStateRunning
+				setGroupState(group, GroupStateRunning)
 				usvc.Info("OPC group items", "All failing items in group %s are now successfully read again", group.Name)
 			}
 		}
@@ -170,11 +197,15 @@ func InitGroups(svc *ddsvc.DdUsvc) {
 	usvc = svc
 	usvc.Get("tagpathdelimiter", ".")
 
-	items, _ := GetGroups()
+	items, err := GetGroups()
+	if err != nil {
+		usvc.Error("OPC groups", "Failed to load groups: %s", err.Error())
+		return
+	}
+
 	for _, item := range items {
-		item.State = GroupStateStopped
+		setGroupState(item, GroupStateStopped)
 		usvc.Event(fmt.Sprintf("group.%d.stopped", item.ID), item)
-		db.DB.Save(item)
 
 		if item.RunAtStart {
 			StartGroup(item)
@@ -184,7 +215,10 @@ func InitGroups(svc *ddsvc.DdUsvc) {
 
 func GetGroups() ([]*OpcGroupItem, error) {
 	var items []*OpcGroupItem
-	db.DB.Order("id").Find(&items)
+	if err := db.DB.Order("id").Find(&items).Error; err != nil {
+		return nil, err
+	}
+
 	return items, nil
 }
 
@@ -199,7 +233,7 @@ func GetGroup(id uint) (OpcGroupItem, error) {
 
 func GetDefaultGroup() (*OpcGroupItem, error) {
 	var item OpcGroupItem
-	if err := db.DB.First(&item, "default_group = 1").Error; err != nil {
+	if err := db.DB.First(&item, "default_group = ?", true).Error; err != nil {
 		return nil, err
 	}
 
@@ -208,7 +242,7 @@ func GetDefaultGroup() (*OpcGroupItem, error) {
 
 func GetGroupTags(id uint) ([]*OpcTagItem, error) {
 	var items []*OpcTagItem
-	if err := db.DB.Find(&items, "groupid = ?", id).Error; err != nil {
+	if err := db.DB.Find(&items, "group_id = ?", id).Error; err != nil {
 		return nil, err
 	}
 
@@ -216,42 +250,41 @@ func GetGroupTags(id uint) ([]*OpcTagItem, error) {
 }
 
 func StartGroup(group *OpcGroupItem) (err error) {
-	// Make sure the group is not already running
-	if group.State == GroupStateRunning || group.State == GroupStateRunningWithWarning {
-		err = fmt.Errorf("Group already running, group: %s (id: %d)", group.Name, group.ID)
-		usvc.Log("error", "OPC collection start failed", err.Error())
-		return
+	tags, err := GetGroupTags(group.ID)
+	if err != nil {
+		return usvc.Error("OPC collection start failed", "Failed to get tags for group: %s (id: %d), error: %s", group.Name, group.ID, err.Error())
 	}
 
-	var tags []*OpcTagItem
-	db.DB.Find(&tags, "group_id = ?", group.ID)
-	if len(tags) <= 0 {
-		err = fmt.Errorf("Unable to find group, group: %s (id: %d)", group.Name, group.ID)
-		usvc.Log("error", "OPC collection start failed", err.Error())
-		return
+	if len(tags) == 0 {
+		return usvc.Error("OPC collection start failed", "No tags in group: %s (id: %d)", group.Name, group.ID)
+	}
+
+	// Make sure the group is not already running
+	if !setRunning(group.ID, true) {
+		return usvc.Error("OPC collection start failed", "Group already running, group: %s (id: %d)", group.Name, group.ID)
 	}
 
 	go groupDataCollector(group, tags)
-
-	return
+	return nil
 }
 
 func StopGroup(group *OpcGroupItem) (err error) {
-	// Make sure the group is running
-	if group.State == GroupStateStopped || group.State == GroupStateUnknown {
-		return usvc.Info("OPC group", "Group not running, group: %s (id: %d)", group.Name, group.ID)
+	runningLock.Lock()
+	isRunning := running[group.ID]
+	runningLock.Unlock()
+
+	if !isRunning {
+		return usvc.Error("OPC group", "Group not running, group: %s (id: %d)", group.Name, group.ID)
 	}
 
-	// Stop collection go routine (unsafe)
-	group.State = GroupStateStopped
-	db.DB.Save(group)
-
-	return
+	// The collector checks the state in the database and stops
+	setGroupState(group, GroupStateStopped)
+	return nil
 }
 
 func GetTagNames() ([]string, error) {
 	var items []string
-	if err := db.DB.Table("opc_tags").Where("deleted_at is null").Pluck("Name", &items).Error; err != nil {
+	if err := db.DB.Model(&OpcTagItem{}).Where("deleted_at is null").Pluck("name", &items).Error; err != nil {
 		return nil, err
 	}
 

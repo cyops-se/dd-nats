@@ -2,13 +2,15 @@ package web
 
 import (
 	"dd-nats/common/ddsvc"
-	"dd-nats/svcs/dd-ui/routes"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
-	"sync"
+	"strconv"
+
+	"dd-nats/svcs/dd-ui/routes"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -33,18 +35,13 @@ type WebSocketClient struct {
 	close      chan string
 }
 
-var dropList []int
-var ws []*websocket.Conn
-var wsMutex sync.Mutex
 var clients = make(map[*websocket.Conn]*WebSocketClient)
 var register = make(chan *WebSocketClient, 5)
-var unregister = make(chan *websocket.Conn, 50)
-var broadcast = make(chan *WebSocketMessage, 5)
+var broadcast = make(chan *WebSocketMessage, 100)
 
 func handlePanic() {
 	if r := recover(); r != nil {
 		log.Printf("Servers panic, recovery: %#v", r)
-		return
 	}
 }
 
@@ -54,7 +51,11 @@ func RunWeb(usvc *ddsvc.DdUsvc) {
 	go runSocketActions()
 
 	// http.FS can be used to create a http Filesystem
-	subFS2, _ := fs.Sub(static, "static")
+	subFS2, err := fs.Sub(static, "static")
+	if err != nil {
+		usvc.Error("Web server", "Failed to load embedded static files: %s", err.Error())
+		return
+	}
 	var staticFS = http.FS(subFS2)
 
 	// Set a file transfer limit to 50MB
@@ -71,7 +72,6 @@ func RunWeb(usvc *ddsvc.DdUsvc) {
 	app.Get("/ui/*", func(ctx *fiber.Ctx) error {
 		ctx.Status(200)
 		ctx.Set(fiber.HeaderContentType, fiber.MIMETextHTML)
-		// return ctx.Send([]byte(admin))
 		return ctx.SendString(admin)
 	})
 
@@ -82,24 +82,32 @@ func RunWeb(usvc *ddsvc.DdUsvc) {
 
 	// WebSocket registration
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		client := &WebSocketClient{c, make(chan string)}
+		client := &WebSocketClient{c, make(chan string, 1)}
 
 		register <- client
-		close := <-client.close
-		log.Println("websocket close signal recevied:", close)
+		reason := <-client.close
+		log.Println("websocket close signal received:", reason)
 	}))
 
 	api := app.Group("/api")
 	routes.RegisterRoutes(api, usvc)
 
 	usvc.Subscribe("system.heartbeat", func(topic string, responseTopic string, data []byte) error {
-		broadcast <- &WebSocketMessage{Topic: topic, Message: string(data)}
+		// Never block the message broker callback, drop the message if the websocket clients are too slow
+		select {
+		case broadcast <- &WebSocketMessage{Topic: topic, Message: string(data)}:
+		default:
+		}
 		return nil
 	})
 
-	app.Listen(fmt.Sprintf(":%d", usvc.Context.Port))
+	usvc.OnStop(func() { app.Shutdown() })
 
-	select {}
+	address := net.JoinHostPort(usvc.Context.BindIP, strconv.Itoa(usvc.Context.Port))
+	usvc.Info("Web server", "Listening on %s", address)
+	if err := app.Listen(address); err != nil {
+		usvc.Error("Web server", "Failed to listen on %s: %s", address, err.Error())
+	}
 }
 
 func runSocketActions() {
@@ -112,16 +120,13 @@ func runSocketActions() {
 		case msg := <-broadcast:
 			for connection, client := range clients {
 				if err := connection.WriteJSON(msg); err != nil {
-					client.close <- "timetoexit"
-					unregister <- connection
 					connection.WriteMessage(websocket.CloseMessage, []byte{})
 					connection.Close()
+					delete(clients, connection) // deleting during range is safe in Go
+					client.close <- fmt.Sprintf("write failed: %s", err.Error())
+					log.Println("websocket connection unregistered")
 				}
 			}
-
-		case connection := <-unregister:
-			delete(clients, connection)
-			log.Println("websocket connection unregistered")
 		}
 	}
 }

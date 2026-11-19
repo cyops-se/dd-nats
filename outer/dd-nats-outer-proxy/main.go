@@ -2,146 +2,106 @@ package main
 
 import (
 	"dd-nats/common/ddsvc"
-	"encoding/binary"
+	"dd-nats/common/udpproto"
+	"errors"
 	"log"
 	"net"
-	"strconv"
 	"time"
 )
 
-type msgInfo struct {
-	msgid        uint32
-	totalsize    uint32
-	totalpackets uint32
-	packetno     uint32
-	lastpacket   uint32
-	index        uint32
-	subject      string
-	payload      []byte
-}
-
 var udpconn *net.UDPConn
-var activemsgs map[uint32]*msgInfo
 
 func main() {
-	var usvc *ddsvc.DdUsvc
-	if usvc = ddsvc.InitService("dd-nats-outer-proxy"); usvc != nil {
+	if usvc := ddsvc.InitService("dd-nats-outer-proxy"); usvc != nil {
 		usvc.RunService(runEngine)
 	}
 
-	usvc.Trace("Application status", "Exiting ...")
+	log.Printf("Exiting ...")
 }
 
 func runEngine(svc *ddsvc.DdUsvc) {
-	port, _ := strconv.Atoi(svc.Get("port", "4359"))
+	port := svc.GetInt("port", 4359)
 	bindip := svc.Get("bindip", "0.0.0.0")
 	if err := listenUDP(svc, bindip, port); err != nil {
 		svc.Error("Failed to listen", "Exiting application due to UDP connection failure, err: %s", err.Error())
 		return
 	}
 
+	// A larger receive buffer reduces packet loss during bursts
+	if err := udpconn.SetReadBuffer(svc.GetInt("readbuffer", 8*1024*1024)); err != nil {
+		svc.Error("Outer proxy", "Failed to set UDP read buffer size: %s", err.Error())
+	}
+
+	svc.OnStop(func() { udpconn.Close() })
+
 	prefix := svc.Get("prefix", "inner.")
+	maxsize := svc.GetInt("maxmsgsize", udpproto.DefaultMaxMsgSize)
+	reassembler := udpproto.NewReassembler(uint32(maxsize), 30*time.Second)
 
 	// Start receiving UDP messages
-	go readUDP(svc, prefix)
-	go readActiveMsgs()
+	go readUDP(svc, prefix, reassembler)
+	go purgeActiveMsgs(svc, reassembler)
 }
 
 func listenUDP(svc *ddsvc.DdUsvc, bindip string, port int) (err error) {
+	if bindip == "nil" {
+		svc.Trace("Outer proxy", "Listening to address (%s): nil:%d", bindip, port)
+		udpconn, err = net.ListenUDP("udp4", nil)
+		return err
+	}
+
 	addr := net.UDPAddr{
 		Port: port,
 		IP:   net.ParseIP(bindip),
 	}
 
-	if bindip == "nil" {
-		svc.Trace("Outer proxy", "Listening to address (%s): nil:%d", bindip, port)
-		udpconn, err = net.ListenUDP("udp4", nil)
-	} else {
-		svc.Trace("Outer proxy", "Listening to address: '%s:%d'", bindip, port)
-		udpconn, err = net.ListenUDP("udp4", &addr)
-	}
+	svc.Trace("Outer proxy", "Listening to address: '%s:%d'", bindip, port)
+	udpconn, err = net.ListenUDP("udp4", &addr)
 	return err
 }
 
-// packet layout
-// | uint32 | uint32 | uint32 | uint32 | uint32 | [subjectsize]byte | uint32 | [packetsize]byte    |
-// |--------|--------|--------|--------|--------|-------------------|--------|---------------------|
-// | msgid  | total  | total  | packet | subject| subject...        | payload| payload fragment... |
-// |        | size   | packets| no     | size   | (packetno = 0)    | size   |                     |
-
-func readUDP(svc *ddsvc.DdUsvc, prefix string) {
-	packetlen := 1480
-	packet := make([]byte, packetlen)
-	activemsgs = make(map[uint32]*msgInfo)
+func readUDP(svc *ddsvc.DdUsvc, prefix string, reassembler *udpproto.Reassembler) {
+	// Big enough for any UDP datagram, the actual packet size is given by the read length
+	buffer := make([]byte, 65536)
 
 	for {
-		svc.Trace("Outer proxy", "Waiting to receive packet")
-		_, from, err := udpconn.ReadFromUDP(packet)
+		n, from, err := udpconn.ReadFromUDP(buffer)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				svc.Info("Outer proxy", "UDP listener closed: %s", err.Error())
+				return
+			}
+
 			svc.Error("Failed to read UDP", "Failed to read data packet, err: %s", err.Error())
 			continue
 		}
 
-		svc.Trace("Outer proxy", "Message recevied from IP: '%s'", from.IP.String())
-
-		// read message id, packet no and total packets to determine if it is a new message or not
-		// and if we need to store it or not (single packets doesn't have to be kept)
-		msgid := binary.LittleEndian.Uint32(packet)
-		totalsize := binary.LittleEndian.Uint32(packet[4:])
-		totalpackets := binary.LittleEndian.Uint32(packet[8:])
-		packetno := binary.LittleEndian.Uint32(packet[12:])
-		subjectsize := binary.LittleEndian.Uint32(packet[16:])
-		msg := &msgInfo{msgid: msgid, totalsize: totalsize, totalpackets: totalpackets, packetno: packetno, lastpacket: packetno}
-
-		// we only get subject with the first packet
-		if packetno == 0 || subjectsize > 0 {
-			msg.subject = string(packet[20 : 20+subjectsize])
-			msg.payload = make([]byte, msg.totalsize)
+		msg, err := reassembler.Add(buffer[:n])
+		if err != nil {
+			svc.Error("Outer proxy", "Discarding packet from %s: %s", from.IP.String(), err.Error())
+			continue
 		}
 
-		// if totalpackets > 1, then we need to find the message or create a new
-		if totalpackets > 1 {
-			if packetno == 0 {
-				activemsgs[msgid] = msg
-			} else {
-				// not a new message, find it
-				msg = activemsgs[msgid] // Is this introducing too much lag?
-				if msg == nil {
-					continue
-				}
-
-				msg.lastpacket = msg.packetno
-				msg.packetno = packetno
-
-				if msg.packetno != msg.lastpacket+1 {
-					svc.Error("Packets out of sync", "Attempting to synchronize: msgid %d, packet # %d, lastpacket %d, total size %d", msgid, msg.packetno, msg.lastpacket, totalsize)
-					delete(activemsgs, msg.msgid)
-					continue
-				}
+		if msg != nil {
+			if err := svc.Publish(prefix+msg.Subject, msg.Payload); err != nil {
+				svc.Error("Outer proxy", "Failed to publish message, subject: %s, error: %s", msg.Subject, err.Error())
 			}
-		} else {
-			msg.payload = make([]byte, msg.totalsize)
-		}
-
-		chunksize := binary.LittleEndian.Uint32(packet[20+subjectsize:])
-		offset := 24 + subjectsize
-		copy(msg.payload[msg.index:], packet[offset:offset+chunksize])
-		msg.index += chunksize
-
-		if msg.packetno == msg.totalpackets-1 {
-			svc.Publish(prefix+msg.subject, msg.payload[:totalsize])
-			delete(activemsgs, msg.msgid)
 		}
 	}
 }
 
-func readActiveMsgs() {
-	ticker := time.NewTicker(1000 * time.Millisecond)
-	for {
-		<-ticker.C
-		count := len(activemsgs)
-		if count > 0 {
-			log.Printf("There are %d active messages", count)
+// Remove partial messages that will never complete (lost packets)
+func purgeActiveMsgs(svc *ddsvc.DdUsvc, reassembler *udpproto.Reassembler) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if count := reassembler.Purge(); count > 0 {
+			svc.Error("Outer proxy", "Discarded %d incomplete message(s) (lost packets)", count)
+		}
+
+		if active := reassembler.Active(); active > 0 {
+			svc.Trace("Outer proxy", "There are %d active messages", active)
 		}
 	}
 }

@@ -1,7 +1,3 @@
-// Copyright 2012 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 //go:build linux
 // +build linux
 
@@ -12,15 +8,16 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 var SysInfo types.SystemInformation
 
 func handlePanic() {
 	if r := recover(); r != nil {
-		// ddsvc.Error("Windows service error", "Panic, recovery: %#v", r)
 		log.Printf("Linux service panic, recovery: %#v", r)
-		return
 	}
 }
 
@@ -39,9 +36,15 @@ func processArgs(svcName string) *types.Context {
 
 	SysInfo.GitVersion = GitVersion
 	SysInfo.GitCommit = GitCommit
+	SysInfo.BuildTime = BuildTime
 
 	if ctx.Version {
 		fmt.Printf("%s version %s, commit: %s, build time: %s\n", svcName, SysInfo.GitVersion, SysInfo.GitCommit, SysInfo.BuildTime)
+		return nil
+	}
+
+	if ctx.Cmd == "install" || ctx.Cmd == "remove" {
+		fmt.Printf("The '%s' command is not supported on Linux, use systemd instead\n", ctx.Cmd)
 		return nil
 	}
 
@@ -50,7 +53,17 @@ func processArgs(svcName string) *types.Context {
 
 func RunService(usvc *DdUsvc, engine func(*DdUsvc)) {
 	usvc.Info("Service engine", "Starting %s service", usvc.Name)
-	engine(usvc)
-	select {}
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		defer handlePanic()
+		engine(usvc)
+	}()
+
+	sig := <-signals
+	usvc.Info("Service engine", "%s service stopping (signal: %s)", usvc.Name, sig.String())
+	usvc.runStopHooks()
 	usvc.Info("Service engine", "%s service stopped", usvc.Name)
 }
