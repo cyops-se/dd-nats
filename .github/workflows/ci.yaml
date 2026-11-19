@@ -1,0 +1,111 @@
+name: CI
+run-name: CI ${{ github.ref_name }}
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  go-linux:
+    name: Go (linux, race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Placeholder for embedded UI files
+        run: |
+          mkdir -p svcs/dd-ui/web/static
+          [ -f svcs/dd-ui/web/static/index.html ] || echo "<html></html>" > svcs/dd-ui/web/static/index.html
+      - name: Select packages
+        # dd-nats-opcda uses OLE/COM and only builds on Windows
+        run: echo "PKGS=$(go list ./... | grep -v '/inner/dd-nats-opcda' | tr '\n' ' ')" >> "$GITHUB_ENV"
+      - name: Vet
+        run: go vet $PKGS
+      - name: Test (race detector)
+        run: go test -race -count=1 -timeout 5m $PKGS
+      - name: Short fuzz of the UDP reassembler
+        run: go test -run '^$' -fuzz FuzzReassembler -fuzztime 30s ./common/udpproto
+
+  go-windows:
+    name: Go (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Placeholder for embedded UI files
+        shell: bash
+        run: |
+          mkdir -p svcs/dd-ui/web/static
+          [ -f svcs/dd-ui/web/static/index.html ] || echo "<html></html>" > svcs/dd-ui/web/static/index.html
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -count=1 -timeout 5m ./...
+
+  govulncheck:
+    name: Go vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Placeholder for embedded UI files
+        run: |
+          mkdir -p svcs/dd-ui/web/static
+          echo "<html></html>" > svcs/dd-ui/web/static/index.html
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          GOOS=linux govulncheck $(go list ./... | grep -v '/inner/dd-nats-opcda')
+
+  ui:
+    name: UI build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Vue CLI 4 / webpack 4 requires Node <= 16 (OpenSSL 3 incompatibility in later versions)
+          node-version: '16'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Lint (informational)
+        run: npx vue-cli-service lint --no-fix
+        continue-on-error: true
+
+  dotnet:
+    name: C# OPC services
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        solution:
+          - inner/dd-opcda-win/dd-opcda-win.sln
+          - inner/dd-opcua-win/dd-opcua-win.sln
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Restore and build
+        run: msbuild ${{ matrix.solution }} -restore -p:RestorePackagesConfig=true -p:Configuration=Release -m -nologo -v:minimal

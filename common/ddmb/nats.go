@@ -4,35 +4,56 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
 )
 
-type NatsSubscription struct {
-	name string
-	cb   IMessageHandler
-}
-
 type NatsMessageBroker struct {
 	Error   error
 	NatsCon *nats.Conn
-	subs    map[string]*NatsSubscription
+	subs    map[string][]*nats.Subscription
+	lock    sync.Mutex
 }
 
 func NewNatsBroker() IMessageBroker {
 	mb := new(NatsMessageBroker)
-	mb.subs = make(map[string]*NatsSubscription)
+	mb.subs = make(map[string][]*nats.Subscription)
 	return mb
 }
 
 func (mb *NatsMessageBroker) Connect(connectionUrl string) error {
-	if mb.NatsCon, mb.Error = nats.Connect(connectionUrl); mb.Error != nil {
-		for mb.Error != nil {
-			log.Printf("Failed to connect to NATS server, retrying in 5 seconds, error: %s", mb.Error.Error())
-			time.Sleep(5 * time.Second)
-			mb.NatsCon, mb.Error = nats.Connect(connectionUrl)
+	options := []nats.Option{
+		nats.MaxReconnects(-1), // never give up reconnecting (default is 60 attempts)
+		nats.ReconnectWait(2 * time.Second),
+		nats.DisconnectErrHandler(func(c *nats.Conn, err error) {
+			if err != nil {
+				log.Printf("Disconnected from NATS server: %s", err.Error())
+			} else {
+				log.Printf("Disconnected from NATS server")
+			}
+		}),
+		nats.ReconnectHandler(func(c *nats.Conn) {
+			log.Printf("Reconnected to NATS server: %s", c.ConnectedUrl())
+		}),
+		nats.ErrorHandler(func(c *nats.Conn, s *nats.Subscription, err error) {
+			subject := ""
+			if s != nil {
+				subject = s.Subject
+			}
+			log.Printf("NATS error (subject '%s'): %s", subject, err.Error())
+		}),
+	}
+
+	for {
+		mb.NatsCon, mb.Error = nats.Connect(connectionUrl, options...)
+		if mb.Error == nil {
+			break
 		}
+
+		log.Printf("Failed to connect to NATS server, retrying in 5 seconds, error: %s", mb.Error.Error())
+		time.Sleep(5 * time.Second)
 	}
 
 	log.Printf("Connected to %s", connectionUrl)
@@ -40,7 +61,16 @@ func (mb *NatsMessageBroker) Connect(connectionUrl string) error {
 }
 
 func (mb *NatsMessageBroker) Disconnect() error {
-	return nil
+	if mb.NatsCon == nil {
+		return nil
+	}
+
+	err := mb.NatsCon.Drain()
+	if err != nil {
+		mb.NatsCon.Close()
+	}
+
+	return err
 }
 
 func (mb *NatsMessageBroker) Publish(topic string, data interface{}) error {
@@ -48,16 +78,9 @@ func (mb *NatsMessageBroker) Publish(topic string, data interface{}) error {
 		return fmt.Errorf("failed to publish subject '%s': No connection to NATS", topic)
 	}
 
-	var payload []byte
-	var err error
-
-	if _, ok := data.([]byte); ok {
-		payload = data.([]byte)
-	} else {
-		payload, err = json.Marshal(data)
-		if err != nil {
-			return fmt.Errorf("failed to publish subject '%s': %s", topic, err.Error())
-		}
+	payload, err := toPayload(topic, data, json.Marshal)
+	if err != nil {
+		return err
 	}
 
 	return mb.NatsCon.Publish(topic, payload)
@@ -68,17 +91,17 @@ func (mb *NatsMessageBroker) Request(topic string, data interface{}) ([]byte, er
 		return nil, fmt.Errorf("failed to publish subject '%s': No connection to NATS", topic)
 	}
 
-	payload, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to publish subject '%s': %s", topic, err.Error())
-	}
-
-	msg, err := mb.NatsCon.Request(topic, payload, 5*time.Second)
+	payload, err := toPayload(topic, data, json.Marshal)
 	if err != nil {
 		return nil, err
 	}
 
-	return msg.Data, err
+	msg, err := mb.NatsCon.Request(topic, payload, RequestTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return msg.Data, nil
 }
 
 func (mb *NatsMessageBroker) Subscribe(topic string, callback IMessageHandler) error {
@@ -86,17 +109,38 @@ func (mb *NatsMessageBroker) Subscribe(topic string, callback IMessageHandler) e
 		return fmt.Errorf("failed to subscribe to subject '%s': No connection to NATS", topic)
 	}
 
-	sub := &NatsSubscription{name: topic, cb: callback}
-	mb.NatsCon.Subscribe(topic, sub.localDispatch)
+	sub, err := mb.NatsCon.Subscribe(topic, func(msg *nats.Msg) {
+		if msg == nil {
+			log.Printf("Local NATS subscription dispatch received an empty message")
+			return
+		}
+
+		dispatch(callback, msg.Subject, msg.Reply, msg.Data)
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to subject '%s': %s", topic, err.Error())
+	}
+
+	mb.lock.Lock()
+	mb.subs[topic] = append(mb.subs[topic], sub)
+	mb.lock.Unlock()
 
 	return nil
 }
 
-func (sub *NatsSubscription) localDispatch(msg *nats.Msg) {
-	if msg == nil {
-		log.Printf("Local NATS subscription dispatch received an empty message")
-		return
+func (mb *NatsMessageBroker) Unsubscribe(topic string) error {
+	mb.lock.Lock()
+	subs := mb.subs[topic]
+	delete(mb.subs, topic)
+	mb.lock.Unlock()
+
+	var lasterr error
+	for _, sub := range subs {
+		if err := sub.Unsubscribe(); err != nil {
+			lasterr = err
+		}
 	}
 
-	sub.cb(msg.Subject, msg.Reply, msg.Data)
+	return lasterr
 }

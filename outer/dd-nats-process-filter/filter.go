@@ -3,9 +3,9 @@ package main
 import (
 	"dd-nats/common/types"
 	"encoding/json"
-	"log"
 	"math"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -14,6 +14,8 @@ const (
 	FilterTypeInterval = 1
 	FilterTypeDeadband = 2
 )
+
+const filterDataFile = "filterdata.json"
 
 type allMetaResponse struct {
 	types.StatusResponse
@@ -37,132 +39,149 @@ type filteredPoint struct {
 	LastTime      time.Time       `json:"-"`
 }
 
-var datapoints map[string]*filteredPoint
+// datapoints is accessed from several message handlers and the periodic
+// submission task concurrently, always hold datapointsLock
+var datapoints = make(map[string]*filteredPoint)
+var datapointsLock sync.Mutex
 
-func processMsgHandler(topic string, responseTopic string, data []byte) error {
-	var msg types.DataPointSample
-	if err := json.Unmarshal(data, &msg); err == nil {
-		for _, dp := range msg.Points {
-			fp, ok := datapoints[dp.Name]
-			if !ok {
-				fp = &filteredPoint{}
-				datapoints[dp.Name] = fp
-			}
+type publication struct {
+	topic string
+	data  interface{}
+}
 
-			fp.DataPoint = dp
+// filter applies the configured filter to a data point and returns the
+// messages to publish. Must be called with datapointsLock held.
+func filter(fp *filteredPoint, dp types.DataPoint, now time.Time) []publication {
+	var out []publication
 
-			svc.Publish("process.actual", dp)
-			if fp.FilterType == FilterTypeNone {
-				svc.Publish("process.filtered", dp)
-			} else if fp.FilterType == FilterTypeInterval {
-				if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
-					svc.Publish("process.filtered", dp)
-					fp.PreviousTime = time.Now()
-					fp.PreviousValue = dp.Value
-				}
-			} else if fp.FilterType == FilterTypeDeadband {
-				fp.Integrator += dp.Value - fp.PreviousValue
-				if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
-					svc.Publish("process.filtered", dp)
-					fp.Integrator = 0
-					fp.PreviousValue = dp.Value
-				}
-			}
+	out = append(out, publication{"process.actual", dp})
+	switch fp.FilterType {
+	case FilterTypeNone:
+		fp.PreviousValue = dp.Value
+		out = append(out, publication{"process.filtered", dp})
 
-			svc.Publish("process.filtermeta", fp)
+	case FilterTypeInterval:
+		if now.Sub(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
+			out = append(out, publication{"process.filtered", dp})
+			fp.PreviousTime = now
+			fp.PreviousValue = dp.Value
 		}
-	} else {
-		svc.Error("Process filter", "Failed to unmarshal process data: %s", err.Error())
+
+	case FilterTypeDeadband:
+		fp.Integrator += dp.Value - fp.PreviousValue
+		if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
+			out = append(out, publication{"process.filtered", dp})
+			fp.Integrator = 0
+			fp.PreviousValue = dp.Value
+		}
 	}
 
-	return nil
+	out = append(out, publication{"process.filtermeta", *fp})
+	return out
 }
 
 func processDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(data, &dp); err == nil {
-		fp, ok := datapoints[dp.Name]
-		if !ok {
-			fp = &filteredPoint{}
-			datapoints[dp.Name] = fp
-		}
-
-		fp.DataPoint = dp
-
-		// No more often than once a second regardless
-		if time.Since(fp.LastTime) > time.Second*time.Duration(1) {
-			svc.Publish("process.actual", dp)
-			fp.LastTime = time.Now()
-
-			if fp.FilterType == FilterTypeNone {
-				fp.PreviousValue = dp.Value
-				svc.Publish("process.filtered", dp)
-			} else if fp.FilterType == FilterTypeInterval {
-				if time.Since(fp.PreviousTime) > time.Second*time.Duration(fp.Interval) {
-					svc.Publish("process.filtered", dp)
-					fp.PreviousTime = time.Now()
-				}
-			} else if fp.FilterType == FilterTypeDeadband {
-				fp.Integrator += dp.Value - fp.PreviousValue
-				if math.Abs(fp.Integrator) > fp.Deadband*(fp.Max-fp.Min) {
-					svc.Publish("process.filtered", dp)
-					fp.Integrator = 0
-					fp.PreviousValue = dp.Value
-				}
-			}
-
-			svc.Publish("process.filtermeta", fp)
-		}
-	} else {
+	if err := json.Unmarshal(data, &dp); err != nil {
 		svc.Error("Process filter", "Failed to unmarshal process data: %s", err.Error())
+		return nil
+	}
+
+	now := time.Now()
+
+	datapointsLock.Lock()
+	fp, ok := datapoints[dp.Name]
+	if !ok {
+		fp = &filteredPoint{}
+		datapoints[dp.Name] = fp
+	}
+
+	fp.DataPoint = dp
+
+	// No more often than once a second regardless
+	var out []publication
+	if now.Sub(fp.LastTime) > time.Second {
+		fp.LastTime = now
+		out = filter(fp, dp, now)
+	}
+	datapointsLock.Unlock()
+
+	for _, p := range out {
+		svc.Publish(p.topic, p.data)
 	}
 
 	return nil
 }
 
-// The ackumulated deadband in this filter process is dependent on periodic
+// The accumulated deadband in this filter process is dependent on periodic
 // collection of samples. This background task will periodically check all tags
 // and submit the last seen value with quality 68 for those that haven't been seen
 // in the last 10 secs. This function has been moved here from the sampler on the inside.
 func processPeriodSubmissionTask() {
 	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	for {
-		<-ticker.C
+	for range ticker.C {
+		now := time.Now()
+		var resubmit []types.DataPoint
 
+		datapointsLock.Lock()
 		for _, fp := range datapoints {
-			if time.Since(fp.LastTime) > time.Second*time.Duration(10) {
-				fp.DataPoint.Quality = 68 // Uncertain [Last usable] tag.Quality;
-				fp.LastTime = time.Now()
-				svc.Publish("inner.process.actual", fp.DataPoint)
+			if now.Sub(fp.LastTime) > 10*time.Second {
+				dp := fp.DataPoint
+				dp.Quality = 68 // Uncertain [Last usable] tag.Quality;
+				dp.Time = now.UTC()
+				fp.LastTime = now
+				resubmit = append(resubmit, dp)
 			}
+		}
+		datapointsLock.Unlock()
+
+		// Fed back through the regular input topic, so all consumers see a consistent stream
+		for _, dp := range resubmit {
+			svc.Publish(inputTopic, dp)
 		}
 	}
 }
 
 func processMetaUpdate(topic string, responseTopic string, data []byte) error {
-	syncMetaWithTimescale()
-	return nil
+	return syncMetaWithTimescale()
 }
 
+// Must be called with datapointsLock held
 func saveFilterMeta() error {
-	filename := "filterdata.json"
-	if content, err := json.Marshal(datapoints); err == nil {
-		err := os.WriteFile(filename, content, 0755)
-		return err
-	} else {
+	content, err := json.Marshal(datapoints)
+	if err != nil {
 		return err
 	}
+
+	tmpname := filterDataFile + ".tmp"
+	if err = os.WriteFile(tmpname, content, 0644); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpname, filterDataFile)
 }
 
 func loadFilterMeta() error {
-	filename := "filterdata.json"
-	if content, err := os.ReadFile(filename); err != nil {
+	content, err := os.ReadFile(filterDataFile)
+	if err != nil && !os.IsNotExist(err) {
 		return err
-	} else {
-		if err := json.Unmarshal(content, &datapoints); err != nil {
+	}
+
+	if err == nil {
+		loaded := make(map[string]*filteredPoint)
+		if err := json.Unmarshal(content, &loaded); err != nil {
 			return err
 		}
+
+		datapointsLock.Lock()
+		for k, v := range loaded {
+			if v != nil {
+				datapoints[k] = v
+			}
+		}
+		datapointsLock.Unlock()
 	}
 
 	return syncMetaWithTimescale()
@@ -171,14 +190,16 @@ func loadFilterMeta() error {
 func syncMetaWithTimescale() error {
 	response, err := svc.Request("usvc.timescale.meta.getall", nil)
 	if err != nil {
-		log.Printf("failed to get meta from timescale: %s", err.Error())
-		return err
+		return svc.Error("Process filter", "Failed to get meta from timescale: %s", err.Error())
 	}
 
 	var metaitems allMetaResponse
 	if err := json.Unmarshal(response, &metaitems); err != nil {
 		return err
 	}
+
+	datapointsLock.Lock()
+	defer datapointsLock.Unlock()
 
 	for _, item := range metaitems.Items {
 		if fp, ok := datapoints[item.Name]; ok {

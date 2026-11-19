@@ -67,8 +67,9 @@ namespace DdUsvc
             try
             {
                 EnsureConnected();
+                // No Flush() here, a round trip to the server for every message
+                // limits the throughput severely. The client flushes in the background.
                 _connection.Publish(topic, data);
-                _connection.Flush(5000);
             }
             catch (Exception ex)
             {

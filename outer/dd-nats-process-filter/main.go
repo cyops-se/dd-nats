@@ -6,6 +6,7 @@ import (
 )
 
 var svc *ddsvc.DdUsvc
+var inputTopic string
 
 func main() {
 	if svc = ddsvc.InitService("dd-nats-process-filter"); svc != nil {
@@ -15,17 +16,19 @@ func main() {
 	log.Printf("Exiting ...")
 }
 
-func runEngine(svc *ddsvc.DdUsvc) {
+func runEngine(s *ddsvc.DdUsvc) {
 	svc.Info("Microservices", "Process filter microservice running")
 
-	datapoints = make(map[string]*filteredPoint)
-	loadFilterMeta()
+	if err := loadFilterMeta(); err != nil {
+		svc.Error("Process filter", "Failed to load filter data: %s", err.Error())
+	}
+
 	registerFilterRoutes()
-	go processPeriodSubmissionTask()
 
 	// Listen for incoming process data from the inside
-	topic := svc.Get("topic", "inner.process.actual")
-	svc.Subscribe(topic, processDataPointHandler)
+	inputTopic = svc.Get("topic", "inner.process.actual")
+	svc.Subscribe(inputTopic, processDataPointHandler)
+	go processPeriodSubmissionTask()
 
 	// Listen for changes to meta data
 	svc.Subscribe("system.event.timescale.metaupdated", processMetaUpdate)

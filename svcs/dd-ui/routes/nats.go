@@ -18,7 +18,7 @@ func RequestMessageBroker(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&webrequest); err != nil {
 		usvc.Error("Message broker request failed", "Failed to map provided data to natsMsg: %s", err.Error())
-		return c.Status(503).SendString(err.Error())
+		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 	}
 
 	if data, err := usvc.Request(webrequest.Subject, webrequest.Payload); err == nil {

@@ -1,1 +1,0 @@
-# dd-nats-legacy-proxy

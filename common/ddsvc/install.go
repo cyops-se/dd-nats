@@ -17,29 +17,16 @@ import (
 )
 
 func exePath() (string, error) {
-	prog := os.Args[0]
-	p, err := filepath.Abs(prog)
+	p, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	fi, err := os.Stat(p)
-	if err == nil {
-		if !fi.Mode().IsDir() {
-			return p, nil
-		}
-		err = fmt.Errorf("%s is directory", p)
+
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		p = resolved
 	}
-	if filepath.Ext(p) == "" {
-		p += ".exe"
-		fi, err := os.Stat(p)
-		if err == nil {
-			if !fi.Mode().IsDir() {
-				return p, nil
-			}
-			err = fmt.Errorf("%s is directory", p)
-		}
-	}
-	return "", err
+
+	return filepath.Abs(p)
 }
 
 func installService(name, desc string) error {

@@ -99,10 +99,7 @@ loop:
 				time.Sleep(100 * time.Millisecond)
 				changes <- c.CurrentStatus
 			case svc.Stop, svc.Shutdown:
-				// golang.org/x/sys/windows/svc.TestExample is verifying this output.
-				testOutput := strings.Join(args, "-")
-				testOutput += fmt.Sprintf("-%d", c.Context)
-				m.usvc.Info("Service engine", testOutput)
+				m.usvc.Info("Service engine", "Stop requested (%s)", strings.Join(args, " "))
 				break loop
 			case svc.Pause:
 				changes <- svc.Status{State: svc.Paused, Accepts: cmdsAccepted}
@@ -117,6 +114,7 @@ loop:
 	}
 	m.usvc.Info("Service engine", "Exiting service control loop")
 	changes <- svc.Status{State: svc.StopPending}
+	m.usvc.runStopHooks()
 	return
 }
 

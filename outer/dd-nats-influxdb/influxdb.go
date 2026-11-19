@@ -3,7 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"net"
 	"net/url"
+	"strconv"
+	"time"
 
 	"dd-nats/common/ddsvc"
 	"dd-nats/common/types"
@@ -11,38 +15,60 @@ import (
 	influxd "github.com/influxdata/influxdb1-client"
 )
 
+const (
+	maxPendingPoints = 100000
+	flushInterval    = time.Second
+	maxWriteRetries  = 30 // with one retry per second, data is kept for about 30 seconds
+)
+
 type InfluxDBEmitter struct {
-	Host      string               `json:"host"`
-	Port      int                  `json:"port"`
-	Database  string               `json:"database"`
-	Batchsize int                  `json:"batchsize"`
-	client    *influxd.Client      `json:"-" gorm:"-"`
-	err       error                `json:"-" gorm:"-"`
-	messages  chan types.DataPoint `json:"-" gorm:"-"`
-	points    []influxd.Point      `json:"-" gorm:"-"`
-	count     uint64               `json:"-" gorm:"-"`
-	svc       *ddsvc.DdUsvc        `json:"-" gorm:"-"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Database  string `json:"database"`
+	Batchsize int    `json:"batchsize"`
+
+	client   *influxd.Client
+	messages chan types.DataPoint
+	stop     chan chan struct{}
+	points   []influxd.Point
+	failures int
+	svc      *ddsvc.DdUsvc
 }
 
 func (emitter *InfluxDBEmitter) InitEmitter(svc *ddsvc.DdUsvc) error {
 	emitter.svc = svc
-	emitter.connectdb()
-	emitter.initBatch()
+	if emitter.Batchsize < 1 {
+		emitter.Batchsize = 1
+	}
+
 	emitter.messages = make(chan types.DataPoint, 2000)
+	emitter.stop = make(chan chan struct{})
+	emitter.connectdb()
 
 	go emitter.processMessages()
-
 	return nil
+}
+
+// Stop flushes pending points and stops the emitter
+func (emitter *InfluxDBEmitter) Stop() {
+	done := make(chan struct{})
+	select {
+	case emitter.stop <- done:
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+		}
+	case <-time.After(time.Second):
+	}
 }
 
 func (emitter *InfluxDBEmitter) ProcessDataPointHandler(topic string, responseTopic string, data []byte) error {
 	var dp types.DataPoint
-	if err := json.Unmarshal(data, &dp); err == nil {
-		emitter.ProcessMessage(dp)
-	} else {
-		emitter.svc.Error("InfluxDB usvc", "Failed to unmarshal process data: %s", err.Error())
+	if err := json.Unmarshal(data, &dp); err != nil {
+		return fmt.Errorf("failed to unmarshal process data: %s", err.Error())
 	}
 
+	emitter.ProcessMessage(dp)
 	return nil
 }
 
@@ -53,71 +79,90 @@ func (emitter *InfluxDBEmitter) ProcessMessage(dp types.DataPoint) {
 }
 
 func (emitter *InfluxDBEmitter) processMessages() {
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
 
 	for {
-		dp := <-emitter.messages
-
-		if emitter.client == nil {
-			if emitter.connectdb() != nil {
-				continue
+		select {
+		case dp := <-emitter.messages:
+			if math.IsNaN(dp.Value) || math.IsInf(dp.Value, 0) {
+				continue // not supported by InfluxDB
 			}
-		}
 
-		if emitter.appendPoint(&dp) {
+			emitter.appendPoint(&dp)
+			if len(emitter.points) >= emitter.Batchsize {
+				emitter.insertBatch()
+			}
+
+		case <-ticker.C:
 			emitter.insertBatch()
-			emitter.initBatch()
+
+		case done := <-emitter.stop:
+			emitter.insertBatch()
+			close(done)
+			return
 		}
 	}
 }
 
 func (emitter *InfluxDBEmitter) connectdb() error {
-	host, _ := url.Parse(fmt.Sprintf("http://%s:%d", emitter.Host, emitter.Port))
-	emitter.client, emitter.err = influxd.NewClient(influxd.Config{
-		URL: *host,
+	host, err := url.Parse("http://" + net.JoinHostPort(emitter.Host, strconv.Itoa(emitter.Port)))
+	if err != nil {
+		return emitter.svc.Error("InfluxDB emitter", "Invalid host/port %s:%d: %s", emitter.Host, emitter.Port, err.Error())
+	}
+
+	client, err := influxd.NewClient(influxd.Config{URL: *host, Timeout: 30 * time.Second})
+	if err != nil {
+		return emitter.svc.Error("InfluxDB emitter", "Database server connect: %s, failed: %s", host.String(), err.Error())
+	}
+
+	emitter.client = client
+	emitter.svc.Info("InfluxDB emitter", "Database server client created: %s", host.String())
+	return nil
+}
+
+func (emitter *InfluxDBEmitter) appendPoint(dp *types.DataPoint) {
+	emitter.points = append(emitter.points, influxd.Point{
+		Measurement: "opc",
+		Fields: map[string]interface{}{
+			dp.Name:              dp.Value,
+			dp.Name + "_quality": dp.Quality,
+		},
+		Time: dp.Time,
 	})
 
-	if emitter.err == nil {
-		emitter.svc.Log("info", "InfluxDB emitter", "Database server connected: localhost")
-	} else {
-		emitter.svc.Log("info", "InfluxDB emitter", fmt.Sprintf("Database server connect: localhost, failed: %s", emitter.err.Error()))
+	if excess := len(emitter.points) - maxPendingPoints; excess > 0 {
+		emitter.points = append([]influxd.Point(nil), emitter.points[excess:]...)
+		emitter.svc.Error("InfluxDB emitter", "Buffer full, %d oldest point(s) dropped", excess)
 	}
-
-	return emitter.err
 }
 
-func (emitter *InfluxDBEmitter) initBatch() {
-	emitter.Batchsize = 5
-	emitter.count = 0
-	emitter.points = make([]influxd.Point, emitter.Batchsize)
-}
-
-func (emitter *InfluxDBEmitter) appendPoint(dp *types.DataPoint) bool {
-	if emitter.count < uint64(emitter.Batchsize) {
-		emitter.points[emitter.count] = influxd.Point{
-			Measurement: "opc",
-			Fields: map[string]interface{}{
-				dp.Name:              dp.Value,
-				dp.Name + "_quality": dp.Quality,
-			},
-			Time: dp.Time,
-		}
-		emitter.count++
+func (emitter *InfluxDBEmitter) insertBatch() {
+	if len(emitter.points) == 0 {
+		return
 	}
 
-	return emitter.count >= uint64(emitter.Batchsize)
-}
-
-func (emitter *InfluxDBEmitter) insertBatch() error {
-	if emitter.count > 0 {
-		bps := influxd.BatchPoints{
-			Points:          emitter.points,
-			Database:        "process",
-			RetentionPolicy: "autogen",
-		}
-		if _, emitter.err = emitter.client.Write(bps); emitter.err != nil {
-			emitter.svc.Log("info", "InfluxDB emitter", fmt.Sprintf("Failed to insert new data: %s", emitter.err.Error()))
-		}
+	if emitter.client == nil && emitter.connectdb() != nil {
+		return // keep the points and retry later
 	}
 
-	return nil
+	bps := influxd.BatchPoints{
+		Points:          emitter.points,
+		Database:        emitter.Database,
+		RetentionPolicy: "autogen",
+	}
+
+	if _, err := emitter.client.Write(bps); err != nil {
+		emitter.failures++
+		if emitter.failures < maxWriteRetries {
+			emitter.svc.Error("InfluxDB emitter", "Failed to insert %d point(s), will retry: %s", len(emitter.points), err.Error())
+			return
+		}
+
+		// Most likely a problem with the data itself, don't block all other data forever
+		emitter.svc.Error("InfluxDB emitter", "Failed to insert %d point(s) %d times, dropped: %s", len(emitter.points), emitter.failures, err.Error())
+	}
+
+	emitter.failures = 0
+	emitter.points = emitter.points[:0]
 }

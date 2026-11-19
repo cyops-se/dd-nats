@@ -3,6 +3,7 @@ package main
 import (
 	"dd-nats/common/ddsvc"
 	"log"
+	"strings"
 )
 
 var svc *ddsvc.DdUsvc
@@ -16,13 +17,19 @@ func main() {
 	log.Printf("Exiting ...")
 }
 
-func runEngine(svc *ddsvc.DdUsvc) {
+func runEngine(s *ddsvc.DdUsvc) {
 	svc.Info("Microservices", "RabbitMQ microservice running")
-	emitter.ChannelName = "hello"
-	emitter.Durable = true
-	emitter.Urls = []string{"amqp://user:password@127.0.0.1:5672/"}
+
+	for _, u := range strings.Split(svc.Get("urls", "amqp://user:password@127.0.0.1:5672/"), ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			emitter.Urls = append(emitter.Urls, u)
+		}
+	}
+
+	emitter.ChannelName = svc.Get("queue", "hello")
+	emitter.Durable = svc.Get("durable", "true") == "true"
 	emitter.InitEmitter()
 
 	// Listen for incoming process data
-	svc.Subscribe("inner.process.actual", emitter.processDataPointHandler)
+	svc.Subscribe(svc.Get("topic", "inner.process.actual"), emitter.processDataPointHandler)
 }

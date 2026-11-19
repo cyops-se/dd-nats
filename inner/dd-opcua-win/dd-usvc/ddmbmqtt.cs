@@ -77,7 +77,7 @@ namespace DdUsvc
                 {
                     var incomingTopic = e.ApplicationMessage.Topic.Replace("/", ".");
                     var replyTopic = e.ApplicationMessage.ResponseTopic;
-                    handler(incomingTopic, replyTopic, e.ApplicationMessage.PayloadSegment.Array);
+                    handler(incomingTopic, replyTopic, ToBytes(e.ApplicationMessage.PayloadSegment));
                 }
             }
             catch (Exception ex)
@@ -211,7 +211,7 @@ namespace DdUsvc
             {
                 if (string.Equals(e.ApplicationMessage.Topic, mqttReplyTopic, StringComparison.OrdinalIgnoreCase))
                 {
-                    tcs.TrySetResult(e.ApplicationMessage.PayloadSegment.Array);
+                    tcs.TrySetResult(ToBytes(e.ApplicationMessage.PayloadSegment));
                 }
                 return Task.CompletedTask;
             }
@@ -232,6 +232,16 @@ namespace DdUsvc
             var mqttTopic = ToMqttTopic(topic);
             _client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(mqttTopic).Build()).Wait();
             _subs[mqttTopic] = callback;
+        }
+
+        // PayloadSegment.Array is the whole underlying buffer, which may be larger
+        // than the payload, only copy the part that belongs to the message
+        private static byte[] ToBytes(ArraySegment<byte> segment)
+        {
+            var bytes = new byte[segment.Count];
+            if (segment.Array != null && segment.Count > 0)
+                Buffer.BlockCopy(segment.Array, segment.Offset, bytes, 0, segment.Count);
+            return bytes;
         }
 
         private string ToMqttTopic(string dotted)

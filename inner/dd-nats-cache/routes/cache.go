@@ -6,6 +6,7 @@ import (
 	"dd-nats/inner/dd-nats-cache/app"
 	"dd-nats/inner/dd-nats-cache/messages"
 	"encoding/json"
+	"fmt"
 )
 
 var usvc *ddsvc.DdUsvc
@@ -31,8 +32,9 @@ func resendCacheItems(subject string, responseTopic string, data []byte) error {
 		response.Success = false
 		response.StatusMessage = err.Error()
 	} else {
-		// count := app.ResendCacheItems(items)
-		app.ResendCacheItems(items)
+		count := app.ResendCacheItems(items)
+		response.StatusMessage = fmt.Sprintf("%d of %d file(s) queued for transfer", count, len(items))
+		response.Success = count == len(items)
 	}
 
 	return usvc.Publish(responseTopic, response)
